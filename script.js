@@ -1,8 +1,7 @@
 /* ===========================
-   TRIPSHARE — script.js
+   TRIPSHARE — script.js (CRUD + Image Upload)
    =========================== */
 
-// ── MEMBER COLOR PALETTE ──
 const PALETTES = [
   { bg:'#1E1840', fg:'#A99EFF' },
   { bg:'#0E2E22', fg:'#34D9A0' },
@@ -15,32 +14,41 @@ const PALETTES = [
 ];
 
 const CAT_MAP = {
-  '🍜 อาหาร':    { bg:'rgba(255,107,157,0.14)', color:'#FF6B9D' },
-  '🏨 ที่พัก':   { bg:'rgba(123,104,238,0.14)', color:'#9B8FFF' },
-  '🚗 เดินทาง':  { bg:'rgba(245,166,35,0.14)',  color:'#F5A623' },
-  '🎡 ท่องเที่ยว':{ bg:'rgba(16,201,138,0.14)',  color:'#10C98A' },
-  '🛒 ซื้อของ':  { bg:'rgba(74,158,255,0.14)',   color:'#4A9EFF' },
-  '🍺 เครื่องดื่ม':{ bg:'rgba(249,115,22,0.14)', color:'#f97316' },
-  '💊 ยา/สุขภาพ':{ bg:'rgba(74,222,128,0.14)',   color:'#4ade80' },
-  '📦 อื่นๆ':    { bg:'rgba(148,148,170,0.14)',  color:'#9494AA' },
+  '🍜 อาหาร':      { bg:'rgba(255,107,157,0.14)', color:'#FF6B9D' },
+  '🏨 ที่พัก':     { bg:'rgba(123,104,238,0.14)', color:'#9B8FFF' },
+  '🚗 เดินทาง':    { bg:'rgba(245,166,35,0.14)',  color:'#F5A623' },
+  '🎡 ท่องเที่ยว': { bg:'rgba(16,201,138,0.14)',  color:'#10C98A' },
+  '🛒 ซื้อของ':    { bg:'rgba(74,158,255,0.14)',   color:'#4A9EFF' },
+  '🍺 เครื่องดื่ม':{ bg:'rgba(249,115,22,0.14)',  color:'#f97316' },
+  '💊 ยา/สุขภาพ':  { bg:'rgba(74,222,128,0.14)',   color:'#4ade80' },
+  '📦 อื่นๆ':      { bg:'rgba(148,148,170,0.14)',  color:'#9494AA' },
 };
 
 // ── STATE ──
-let state = loadState() || {
-  currentTrip: null,
-  trips: [],
-};
+let state = loadState() || { currentTrip: null, trips: [] };
 
-let selectedCat = '🍜 อาหาร';
+// Editing state
+let selectedCat        = '🍜 อาหาร';
 let selectedParticipants = [];
-let splitMode = 'equal';
+let splitMode          = 'equal';
+let currentImageData   = null;   // base64 string of selected image
+let editingExpenseId   = null;   // null = create, else = update
+let viewingExpenseId   = null;   // for detail modal
+let editingTripId      = null;   // for edit-trip modal
+let editingMemberName  = null;   // null = add, else = rename
 
 // ── PERSIST ──
 function saveState() {
-  try { localStorage.setItem('tripshare_v3', JSON.stringify(state)); } catch(e) {}
+  try { localStorage.setItem('tripshare_v4', JSON.stringify(state)); } catch(e) {}
 }
 function loadState() {
-  try { const d = localStorage.getItem('tripshare_v3'); return d ? JSON.parse(d) : null; } catch(e) { return null; }
+  try {
+    const d = localStorage.getItem('tripshare_v4');
+    if (d) return JSON.parse(d);
+    // migrate v3
+    const old = localStorage.getItem('tripshare_v3');
+    return old ? JSON.parse(old) : null;
+  } catch(e) { return null; }
 }
 
 // ── HELPERS ──
@@ -55,14 +63,14 @@ function tripById(id) { return state.trips.find(t => t.id === id); }
 function currentTrip() { return tripById(state.currentTrip) || state.trips[0] || null; }
 
 // ── TOAST ──
-function toast(msg) {
+function toast(msg, type = '') {
   const el = document.getElementById('toast');
   el.textContent = msg;
-  el.classList.add('show');
-  setTimeout(() => el.classList.remove('show'), 2200);
+  el.className = 'toast show' + (type ? ' toast-' + type : '');
+  setTimeout(() => el.classList.remove('show'), 2400);
 }
 
-// ── RENDER ENTRY ──
+// ── RENDER ──
 function render() {
   saveState();
   const trip = currentTrip();
@@ -73,17 +81,11 @@ function render() {
   renderBalanceDot(trip);
 }
 
-// ── TOPBAR ──
 function renderTopbar(trip) {
   const el = document.getElementById('trip-switcher-name');
   const em = document.getElementById('trip-switcher-emoji');
-  if (trip) {
-    el.textContent = trip.name;
-    em.textContent = trip.emoji;
-  } else {
-    el.textContent = 'เลือกทริป';
-    em.textContent = '✈️';
-  }
+  if (trip) { el.textContent = trip.name; em.textContent = trip.emoji; }
+  else { el.textContent = 'เลือกทริป'; em.textContent = '✈️'; }
 }
 
 // ── HOME ──
@@ -94,19 +96,16 @@ function renderHome(trip) {
     document.getElementById('sg-per').textContent = '฿0';
     document.getElementById('sg-members').textContent = '0';
     document.getElementById('members-row').innerHTML = buildAddMemberBtn();
-    document.getElementById('exp-list').innerHTML = emptyState('🧳', 'ยังไม่มีทริป', 'กดปุ่มเลือกทริปด้านบน หรือสร้างทริปใหม่ก่อนเลย!');
+    document.getElementById('exp-list').innerHTML = emptyState('🧳','ยังไม่มีทริป','กดปุ่มเลือกทริปด้านบน หรือสร้างทริปใหม่ก่อนเลย!');
     return;
   }
-
   const total = trip.expenses.reduce((s, e) => s + e.amount, 0);
   const perP  = trip.members.length > 0 ? total / trip.members.length : 0;
-
   document.getElementById('summary-total').textContent = fmt(total);
   document.getElementById('sg-count').textContent = trip.expenses.length;
   document.getElementById('sg-per').textContent = '฿' + fmt(perP);
   document.getElementById('sg-members').textContent = trip.members.length;
   document.getElementById('trip-pill-label').textContent = trip.emoji + ' ' + trip.name;
-
   renderMembers(trip);
   renderExpenses(trip);
 }
@@ -117,7 +116,7 @@ function renderMembers(trip) {
   trip.members.forEach((m, i) => {
     const p = pal(i);
     html += `
-      <div class="m-chip" title="${m}">
+      <div class="m-chip" title="${m}" onclick="openEditMember('${m.replace(/'/g,"\\'")}')">
         <div class="m-avatar" style="background:${p.bg};color:${p.fg}">${initials(m)}</div>
         <div class="m-name">${m}</div>
       </div>`;
@@ -127,7 +126,7 @@ function renderMembers(trip) {
 }
 
 function buildAddMemberBtn() {
-  return `<div class="m-chip m-add" onclick="openModal('modal-member')">
+  return `<div class="m-chip m-add" onclick="openAddMember()">
     <div class="m-avatar">+</div>
     <div class="m-name">เพิ่ม</div>
   </div>`;
@@ -136,7 +135,7 @@ function buildAddMemberBtn() {
 function renderExpenses(trip) {
   const list = document.getElementById('exp-list');
   if (!trip || trip.expenses.length === 0) {
-    list.innerHTML = emptyState('🧾', 'ยังไม่มีรายการ', 'กดปุ่ม + ด้านล่างเพื่อเพิ่มค่าใช้จ่ายแรก');
+    list.innerHTML = emptyState('🧾','ยังไม่มีรายการ','กดปุ่ม + ด้านล่างเพื่อเพิ่มค่าใช้จ่ายแรก');
     return;
   }
   list.innerHTML = [...trip.expenses].reverse().map(exp => {
@@ -145,11 +144,12 @@ function renderExpenses(trip) {
     const pp   = pal(pIdx >= 0 ? pIdx : 0);
     const emoji = exp.cat.split(' ')[0];
     const perP  = exp.participants.length > 0 ? exp.amount / exp.participants.length : exp.amount;
+    const hasImg = exp.image ? `<div class="exp-img-badge">📎</div>` : '';
     return `
-      <div class="exp-card" style="--cat-color:${cat.color};--cat-bg:${cat.bg}">
+      <div class="exp-card" style="--cat-color:${cat.color};--cat-bg:${cat.bg}" onclick="openExpenseDetail(${exp.id})">
         <div class="exp-icon-wrap">${emoji}</div>
         <div class="exp-body">
-          <div class="exp-name">${exp.name}</div>
+          <div class="exp-name">${exp.name} ${hasImg}</div>
           <div class="exp-meta">
             <div class="exp-meta-avatar" style="background:${pp.bg};color:${pp.fg}">${initials(exp.paidBy)}</div>
             <span>${exp.paidBy} จ่าย</span>
@@ -166,11 +166,7 @@ function renderExpenses(trip) {
 }
 
 function emptyState(icon, title, sub) {
-  return `<div class="empty-state">
-    <span class="empty-icon">${icon}</span>
-    <div class="empty-title">${title}</div>
-    <div class="empty-sub">${sub}</div>
-  </div>`;
+  return `<div class="empty-state"><span class="empty-icon">${icon}</span><div class="empty-title">${title}</div><div class="empty-sub">${sub}</div></div>`;
 }
 
 // ── BALANCE ──
@@ -193,11 +189,11 @@ function calcSettlements(net) {
     if (v < -0.5) debtors.push({ m, v: Math.abs(v) });
     else if (v > 0.5) creditors.push({ m, v });
   });
-  debtors.sort((a, b) => b.v - a.v);
-  creditors.sort((a, b) => b.v - a.v);
+  debtors.sort((a,b) => b.v - a.v);
+  creditors.sort((a,b) => b.v - a.v);
   const txns = [];
-  const d = debtors.map(x => ({ ...x }));
-  const c = creditors.map(x => ({ ...x }));
+  const d = debtors.map(x => ({...x}));
+  const c = creditors.map(x => ({...x}));
   let i = 0, j = 0;
   while (i < d.length && j < c.length) {
     const amt = Math.min(d[i].v, c[j].v);
@@ -210,21 +206,19 @@ function calcSettlements(net) {
 }
 
 function renderBalance(trip) {
-  const netGrid   = document.getElementById('net-grid');
+  const netGrid    = document.getElementById('net-grid');
   const settleWrap = document.getElementById('settle-wrap');
-
   if (!trip || trip.members.length === 0) {
-    netGrid.innerHTML   = `<div style="grid-column:1/-1">${emptyState('👤', 'ยังไม่มีสมาชิก', 'เพิ่มสมาชิกก่อนนะ')}</div>`;
+    netGrid.innerHTML    = `<div style="grid-column:1/-1">${emptyState('👤','ยังไม่มีสมาชิก','เพิ่มสมาชิกก่อนนะ')}</div>`;
     settleWrap.innerHTML = '';
     return;
   }
-
   const { paid, net } = calcBalances(trip);
   const maxAbs = Math.max(...Object.values(net).map(Math.abs), 1);
 
   netGrid.innerHTML = trip.members.map((m, i) => {
-    const p   = pal(i);
-    const n   = net[m] || 0;
+    const p = pal(i);
+    const n = net[m] || 0;
     const cls = n > 0.5 ? 'is-pos' : n < -0.5 ? 'is-neg' : '';
     const clr = n > 0.5 ? 'clr-pos' : n < -0.5 ? 'clr-neg' : 'clr-zero';
     const barColor = n > 0.5 ? 'var(--green)' : n < -0.5 ? 'var(--red)' : 'var(--t4)';
@@ -248,12 +242,10 @@ function renderBalance(trip) {
 
   const settlements = calcSettlements(net);
   const settled = trip.settled || [];
-
   if (settlements.length === 0) {
-    settleWrap.innerHTML = emptyState('🎉', 'ไม่มียอดค้างชำระ', 'ทุกคนเท่ากันหมดแล้ว!');
+    settleWrap.innerHTML = emptyState('🎉','ไม่มียอดค้างชำระ','ทุกคนเท่ากันหมดแล้ว!');
     return;
   }
-
   settleWrap.innerHTML = settlements.map((s, idx) => {
     const fi = trip.members.indexOf(s.from);
     const ti = trip.members.indexOf(s.to);
@@ -274,8 +266,7 @@ function renderBalance(trip) {
           <div class="settle-amt">฿${fmt(s.amount)}</div>
           ${done
             ? `<div class="tag-done">โอนแล้ว</div>`
-            : `<button class="btn-settle" onclick="markSettled(${idx})">โอนแล้ว ✓</button>`
-          }
+            : `<button class="btn-settle" onclick="markSettled(${idx})">โอนแล้ว ✓</button>`}
         </div>
       </div>`;
   }).join('');
@@ -293,13 +284,13 @@ function renderBalanceDot(trip) {
 function renderStats(trip) {
   const container = document.getElementById('stats-content');
   if (!trip || trip.expenses.length === 0) {
-    container.innerHTML = emptyState('📊', 'ยังไม่มีข้อมูล', 'เพิ่มรายการค่าใช้จ่ายก่อนนะ');
+    container.innerHTML = emptyState('📊','ยังไม่มีข้อมูล','เพิ่มรายการค่าใช้จ่ายก่อนนะ');
     return;
   }
   const total = trip.expenses.reduce((s, e) => s + e.amount, 0);
   const catTotals = {};
   trip.expenses.forEach(e => { catTotals[e.cat] = (catTotals[e.cat] || 0) + e.amount; });
-  const sorted = Object.entries(catTotals).sort((a, b) => b[1] - a[1]);
+  const sorted = Object.entries(catTotals).sort((a,b) => b[1] - a[1]);
 
   let html = `<div class="s-head"><div class="s-title">หมวดหมู่</div></div><div class="stats-pad">`;
   sorted.forEach(([cat, amt]) => {
@@ -345,30 +336,77 @@ function switchPage(name) {
 }
 
 // ── MODALS ──
-function openModal(id) {
-  document.getElementById(id).classList.add('show');
-}
-function closeModal(id) {
-  document.getElementById(id).classList.remove('show');
-}
+function openModal(id) { document.getElementById(id).classList.add('show'); }
+function closeModal(id) { document.getElementById(id).classList.remove('show'); }
 document.querySelectorAll('.overlay').forEach(o => {
-  o.addEventListener('click', e => { if (e.target === o) o.classList.remove('show'); });
+  o.addEventListener('click', e => {
+    if (e.target === o) o.classList.remove('show');
+  });
 });
 
-// ── ADD EXPENSE ──
+// ── IMAGE HANDLING ──
+function handleImageSelect(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  if (file.size > 5 * 1024 * 1024) { toast('รูปภาพใหญ่เกิน 5MB', 'error'); return; }
+
+  const reader = new FileReader();
+  reader.onload = ev => {
+    currentImageData = ev.target.result;
+    showImagePreview(currentImageData);
+  };
+  reader.readAsDataURL(file);
+}
+
+function showImagePreview(src) {
+  document.getElementById('img-placeholder').style.display  = 'none';
+  document.getElementById('img-preview-wrap').style.display = 'flex';
+  document.getElementById('img-preview').src = src;
+}
+
+function removeImage(e) {
+  e.stopPropagation();
+  currentImageData = null;
+  document.getElementById('fi-image').value = '';
+  document.getElementById('img-placeholder').style.display  = 'flex';
+  document.getElementById('img-preview-wrap').style.display = 'none';
+  document.getElementById('img-preview').src = '';
+}
+
+function resetImageUI() {
+  currentImageData = null;
+  document.getElementById('fi-image').value = '';
+  document.getElementById('img-placeholder').style.display  = 'flex';
+  document.getElementById('img-preview-wrap').style.display = 'none';
+  document.getElementById('img-preview').src = '';
+}
+
+function openLightbox(src) {
+  document.getElementById('lightbox-img').src = src;
+  openModal('modal-lightbox');
+}
+
+// ── ADD EXPENSE (Create) ──
 function openAddExpense() {
   const trip = currentTrip();
   if (!trip) { toast('กรุณาสร้างทริปก่อนนะ'); openModal('modal-trip'); return; }
   if (trip.members.length === 0) { toast('กรุณาเพิ่มสมาชิกก่อนนะ'); openModal('modal-member'); return; }
 
-  document.getElementById('fi-name').value = '';
+  editingExpenseId = null;
+  document.getElementById('modal-expense-title').textContent = 'เพิ่มค่าใช้จ่าย';
+  document.getElementById('modal-expense-sub').textContent   = 'บันทึกรายจ่ายใหม่ในทริปนี้';
+  document.getElementById('btn-submit-expense').innerHTML    =
+    `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> บันทึกรายการ`;
+
+  document.getElementById('fi-name').value   = '';
   document.getElementById('fi-amount').value = '';
   document.getElementById('fi-name').classList.remove('error');
   document.getElementById('fi-amount').classList.remove('error');
 
   selectedParticipants = [...trip.members];
-  splitMode = 'equal';
+  splitMode  = 'equal';
   selectedCat = '🍜 อาหาร';
+  resetImageUI();
 
   document.querySelectorAll('.split-tab').forEach(t => t.classList.remove('active'));
   document.getElementById('st-equal').classList.add('active');
@@ -380,6 +418,326 @@ function openAddExpense() {
   setTimeout(() => document.getElementById('fi-name').focus(), 380);
 }
 
+// ── EDIT EXPENSE ──
+function openEditExpense() {
+  closeModal('modal-detail');
+  const trip = currentTrip();
+  const exp  = trip.expenses.find(e => e.id === viewingExpenseId);
+  if (!exp) return;
+
+  editingExpenseId = exp.id;
+  document.getElementById('modal-expense-title').textContent = 'แก้ไขรายการ';
+  document.getElementById('modal-expense-sub').textContent   = 'แก้ไขข้อมูลค่าใช้จ่ายนี้';
+  document.getElementById('btn-submit-expense').innerHTML    =
+    `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> บันทึกการเปลี่ยนแปลง`;
+
+  document.getElementById('fi-name').value   = exp.name;
+  document.getElementById('fi-amount').value = exp.amount;
+  selectedCat          = exp.cat;
+  selectedParticipants = [...exp.participants];
+  splitMode            = 'equal';
+
+  document.querySelectorAll('.split-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('st-equal').classList.add('active');
+
+  // restore image
+  if (exp.image) {
+    currentImageData = exp.image;
+    showImagePreview(exp.image);
+  } else {
+    resetImageUI();
+  }
+
+  buildCatGrid();
+  buildPaidBySelect(trip, exp.paidBy);
+  renderParticipantList();
+  openModal('modal-expense');
+}
+
+// ── SUBMIT EXPENSE (Create / Update) ──
+function submitExpense() {
+  const name   = document.getElementById('fi-name').value.trim();
+  const amount = parseFloat(document.getElementById('fi-amount').value);
+  const paidBy = document.getElementById('fi-paidby').value;
+  let valid = true;
+  if (!name)              { document.getElementById('fi-name').classList.add('error');   valid = false; }
+  if (!amount || amount<=0){ document.getElementById('fi-amount').classList.add('error'); valid = false; }
+  if (!valid) return;
+
+  const trip = currentTrip();
+  if (editingExpenseId !== null) {
+    // UPDATE
+    const idx = trip.expenses.findIndex(e => e.id === editingExpenseId);
+    if (idx !== -1) {
+      trip.expenses[idx] = {
+        ...trip.expenses[idx],
+        name, amount, cat: selectedCat,
+        paidBy, participants: [...selectedParticipants],
+        image: currentImageData,
+      };
+    }
+    toast('แก้ไขรายการแล้ว ✓');
+  } else {
+    // CREATE
+    trip.expenses.push({
+      id: Date.now(), name, amount, cat: selectedCat,
+      paidBy, participants: [...selectedParticipants],
+      settled: [], date: now(),
+      image: currentImageData,
+    });
+    if (trip.settled) trip.settled = [];
+    toast('เพิ่มรายการแล้ว ✓');
+  }
+  closeModal('modal-expense');
+  render();
+}
+
+// ── EXPENSE DETAIL (Read) ──
+function openExpenseDetail(id) {
+  const trip = currentTrip();
+  const exp  = trip.expenses.find(e => e.id === id);
+  if (!exp) return;
+  viewingExpenseId = id;
+
+  const cat = CAT_MAP[exp.cat] || CAT_MAP['📦 อื่นๆ'];
+  const emoji = exp.cat.split(' ')[0];
+  document.getElementById('det-cat-icon').textContent    = emoji;
+  document.getElementById('det-cat-icon').style.background = cat.bg;
+  document.getElementById('det-name').textContent        = exp.name;
+  document.getElementById('det-date').textContent        = exp.date;
+  document.getElementById('det-amount').textContent      = fmt(exp.amount);
+  document.getElementById('det-cat').textContent         = exp.cat;
+  document.getElementById('det-paidby').textContent      = exp.paidBy;
+  const perP = exp.participants.length > 0 ? exp.amount / exp.participants.length : exp.amount;
+  document.getElementById('det-participants').textContent =
+    exp.participants.join(', ') + ` (฿${fmt(perP)}/คน)`;
+
+  const imgWrap = document.getElementById('det-img-wrap');
+  if (exp.image) {
+    document.getElementById('det-img').src = exp.image;
+    imgWrap.style.display = 'block';
+  } else {
+    imgWrap.style.display = 'none';
+  }
+
+  openModal('modal-detail');
+}
+
+// ── DELETE EXPENSE ──
+function confirmDeleteExpense() {
+  closeModal('modal-detail');
+  openConfirm(
+    'ลบรายการนี้?',
+    'รายการนี้จะถูกลบและไม่สามารถกู้คืนได้',
+    () => {
+      const trip = currentTrip();
+      trip.expenses = trip.expenses.filter(e => e.id !== viewingExpenseId);
+      if (trip.settled) trip.settled = [];
+      render();
+      toast('ลบรายการแล้ว', 'error');
+    }
+  );
+}
+
+// ── ADD / EDIT MEMBER ──
+function openAddMember() {
+  editingMemberName = null;
+  document.getElementById('modal-member-title').textContent   = 'เพิ่มสมาชิก';
+  document.getElementById('btn-submit-member').textContent    = 'เพิ่มสมาชิก';
+  document.getElementById('fi-member').value = '';
+  openModal('modal-member');
+  setTimeout(() => document.getElementById('fi-member').focus(), 380);
+}
+
+function openEditMember(name) {
+  editingMemberName = name;
+  document.getElementById('modal-member-title').textContent   = 'แก้ไขชื่อสมาชิก';
+  document.getElementById('btn-submit-member').textContent    = 'บันทึก';
+  document.getElementById('fi-member').value = name;
+  openModal('modal-member');
+  setTimeout(() => document.getElementById('fi-member').focus(), 380);
+}
+
+function submitMember() {
+  const name = document.getElementById('fi-member').value.trim();
+  if (!name) return;
+  const trip = currentTrip();
+  if (!trip) { toast('กรุณาสร้างทริปก่อนนะ'); return; }
+
+  if (editingMemberName !== null) {
+    // RENAME
+    if (trip.members.includes(name) && name !== editingMemberName) {
+      toast('ชื่อนี้มีอยู่แล้ว', 'error'); return;
+    }
+    const idx = trip.members.indexOf(editingMemberName);
+    if (idx !== -1) {
+      trip.members[idx] = name;
+      // rename in expenses
+      trip.expenses.forEach(exp => {
+        if (exp.paidBy === editingMemberName) exp.paidBy = name;
+        exp.participants = exp.participants.map(p => p === editingMemberName ? name : p);
+      });
+    }
+    toast(`เปลี่ยนชื่อเป็น "${name}" แล้ว ✓`);
+  } else {
+    // ADD
+    if (trip.members.includes(name)) { toast('ชื่อนี้มีอยู่แล้ว', 'error'); return; }
+    trip.members.push(name);
+    toast(`เพิ่ม ${name} แล้ว ✓`);
+  }
+  document.getElementById('fi-member').value = '';
+  closeModal('modal-member');
+  render();
+}
+
+// ── TRIPS ──
+function openTripModal() {
+  renderTripList();
+  openModal('modal-trip');
+}
+
+function renderTripList() {
+  const container = document.getElementById('trip-list');
+  if (state.trips.length === 0) {
+    container.innerHTML = `<div class="empty-state" style="padding:24px 0"><span class="empty-icon">🗺️</span><div class="empty-title">ยังไม่มีทริป</div><div class="empty-sub">สร้างทริปแรกของคุณด้านล่างเลย!</div></div>`;
+    return;
+  }
+  container.innerHTML = state.trips.map(trip => {
+    const total = trip.expenses.reduce((s, e) => s + e.amount, 0);
+    const isCurr = trip.id === state.currentTrip;
+    return `
+      <div class="trip-card ${isCurr ? 'curr' : ''}">
+        <div class="tc-emoji" onclick="selectTrip(${trip.id})">${trip.emoji}</div>
+        <div class="tc-info" onclick="selectTrip(${trip.id})">
+          <h4>${trip.name}</h4>
+          <p>${trip.members.length} คน • ${trip.expenses.length} รายการ • ฿${fmt(total)}</p>
+        </div>
+        <button class="tc-edit-btn" onclick="openEditTrip(${trip.id})" title="แก้ไข">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        </button>
+        ${isCurr ? '<div class="tc-check">✓</div>' : ''}
+      </div>`;
+  }).join('');
+}
+
+function selectTrip(id) {
+  state.currentTrip = id;
+  closeModal('modal-trip');
+  render();
+}
+
+function submitTrip() {
+  const name  = document.getElementById('fi-trip-name').value.trim();
+  const emoji = document.getElementById('fi-trip-emoji').value.trim() || '✈️';
+  if (!name) return;
+  const id = Date.now();
+  state.trips.push({ id, name, emoji, members: [], expenses: [], settled: [] });
+  state.currentTrip = id;
+  document.getElementById('fi-trip-name').value  = '';
+  document.getElementById('fi-trip-emoji').value = '';
+  closeModal('modal-trip');
+  render();
+  openAddMember();
+  toast(`สร้างทริป "${name}" แล้ว ✓`);
+}
+
+// ── EDIT TRIP ──
+function openEditTrip(id) {
+  editingTripId = id;
+  const trip = tripById(id);
+  if (!trip) return;
+  document.getElementById('fi-edit-trip-name').value  = trip.name;
+  document.getElementById('fi-edit-trip-emoji').value = trip.emoji;
+  renderMemberManageList(trip);
+  closeModal('modal-trip');
+  openModal('modal-edit-trip');
+}
+
+function renderMemberManageList(trip) {
+  const list = document.getElementById('member-manage-list');
+  if (trip.members.length === 0) {
+    list.innerHTML = `<div class="empty-sub" style="padding:12px 0">ยังไม่มีสมาชิก</div>`;
+    return;
+  }
+  list.innerHTML = trip.members.map((m, i) => {
+    const p = pal(i);
+    return `
+      <div class="member-manage-row">
+        <div class="m-avatar" style="background:${p.bg};color:${p.fg};width:32px;height:32px;font-size:11px">${initials(m)}</div>
+        <div class="member-manage-name">${m}</div>
+        <button class="member-manage-del" onclick="removeMember('${m.replace(/'/g,"\\'")}',${trip.id})" title="ลบสมาชิก">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+        </button>
+      </div>`;
+  }).join('');
+}
+
+function removeMember(name, tripId) {
+  openConfirm(
+    `ลบสมาชิก "${name}"?`,
+    'รายการที่สมาชิกนี้เกี่ยวข้องจะยังคงอยู่',
+    () => {
+      const trip = tripById(tripId);
+      if (!trip) return;
+      trip.members = trip.members.filter(m => m !== name);
+      renderMemberManageList(trip);
+      render();
+      toast(`ลบ ${name} แล้ว`);
+    }
+  );
+}
+
+function submitEditTrip() {
+  const name  = document.getElementById('fi-edit-trip-name').value.trim();
+  const emoji = document.getElementById('fi-edit-trip-emoji').value.trim() || '✈️';
+  if (!name) return;
+  const trip = tripById(editingTripId);
+  if (!trip) return;
+  trip.name  = name;
+  trip.emoji = emoji;
+  closeModal('modal-edit-trip');
+  render();
+  toast(`อัพเดททริป "${name}" แล้ว ✓`);
+}
+
+// ── DELETE TRIP ──
+function confirmDeleteTrip() {
+  const trip = tripById(editingTripId);
+  if (!trip) return;
+  openConfirm(
+    `ลบทริป "${trip.name}"?`,
+    'ทริปและรายการทั้งหมดจะถูกลบถาวร',
+    () => {
+      state.trips = state.trips.filter(t => t.id !== editingTripId);
+      if (state.currentTrip === editingTripId) {
+        state.currentTrip = state.trips.length > 0 ? state.trips[0].id : null;
+      }
+      closeModal('modal-edit-trip');
+      render();
+      toast('ลบทริปแล้ว', 'error');
+    }
+  );
+}
+
+// ── CONFIRM DIALOG ──
+function openConfirm(title, msg, onOk) {
+  document.getElementById('confirm-title').textContent = title;
+  document.getElementById('confirm-msg').textContent   = msg;
+  const btn = document.getElementById('confirm-ok-btn');
+  btn.onclick = () => { closeModal('modal-confirm'); onOk(); };
+  openModal('modal-confirm');
+}
+
+// ── MARK SETTLED ──
+function markSettled(idx) {
+  const trip = currentTrip();
+  if (!trip.settled) trip.settled = [];
+  if (!trip.settled.includes(idx)) trip.settled.push(idx);
+  render();
+  toast('บันทึกการโอนแล้ว ✓');
+}
+
+// ── FORM BUILDERS ──
 function buildCatGrid() {
   const grid = document.getElementById('cat-grid-wrap');
   grid.innerHTML = Object.keys(CAT_MAP).map(cat => {
@@ -393,9 +751,10 @@ function buildCatGrid() {
   }).join('');
 }
 
-function buildPaidBySelect(trip) {
+function buildPaidBySelect(trip, selected = null) {
+  const sel = selected || (trip.members[0] || '');
   document.getElementById('fi-paidby').innerHTML =
-    trip.members.map(m => `<option value="${m}">${m}</option>`).join('');
+    trip.members.map(m => `<option value="${m}" ${m===sel?'selected':''}>${m}</option>`).join('');
 }
 
 function selectCat(el) {
@@ -420,7 +779,7 @@ function renderParticipantList() {
     const p   = pal(i);
     const sel = selectedParticipants.includes(m);
     return `
-      <div class="p-row ${sel ? 'sel' : ''}" onclick="toggleP('${m}')">
+      <div class="p-row ${sel ? 'sel' : ''}" onclick="toggleP('${m.replace(/'/g,"\\'")}')">
         <div class="p-av" style="background:${p.bg};color:${p.fg}">${initials(m)}</div>
         <div class="p-name-txt">${m}</div>
         ${sel && amount > 0 ? `<div class="p-share-lbl">฿${fmt(perP)}</div>` : ''}
@@ -436,110 +795,32 @@ function toggleP(member) {
   renderParticipantList();
 }
 
+// ── EVENT LISTENERS ──
 document.getElementById('fi-amount').addEventListener('input', () => {
   if (document.getElementById('modal-expense').classList.contains('show')) renderParticipantList();
 });
-
-function submitExpense() {
-  const name   = document.getElementById('fi-name').value.trim();
-  const amount = parseFloat(document.getElementById('fi-amount').value);
-  const paidBy = document.getElementById('fi-paidby').value;
-  let valid = true;
-  if (!name)              { document.getElementById('fi-name').classList.add('error');   valid = false; }
-  if (!amount || amount <= 0) { document.getElementById('fi-amount').classList.add('error'); valid = false; }
-  if (!valid) return;
-
-  const trip = currentTrip();
-  trip.expenses.push({
-    id: Date.now(), name, amount, cat: selectedCat,
-    paidBy, participants: [...selectedParticipants],
-    settled: [], date: now(),
-  });
-  if (trip.settled) trip.settled = [];
-  closeModal('modal-expense');
-  render();
-  toast('เพิ่มรายการแล้ว ✓');
-}
-
-// ── ADD MEMBER ──
-function submitMember() {
-  const name = document.getElementById('fi-member').value.trim();
-  if (!name) return;
-  let trip = currentTrip();
-  if (!trip) { toast('กรุณาสร้างทริปก่อนนะ'); return; }
-  if (!trip.members.includes(name)) {
-    trip.members.push(name);
-    render();
-    toast(`เพิ่ม ${name} แล้ว ✓`);
-  }
-  document.getElementById('fi-member').value = '';
-  closeModal('modal-member');
-}
-
-// ── TRIPS ──
-function openTripModal() {
-  renderTripList();
-  openModal('modal-trip');
-}
-function renderTripList() {
-  const container = document.getElementById('trip-list');
-  if (state.trips.length === 0) {
-    container.innerHTML = `<div class="empty-state" style="padding:24px 0"><span class="empty-icon">🗺️</span><div class="empty-title">ยังไม่มีทริป</div><div class="empty-sub">สร้างทริปแรกของคุณด้านล่างเลย!</div></div>`;
-    return;
-  }
-  container.innerHTML = state.trips.map(trip => {
-    const total = trip.expenses.reduce((s, e) => s + e.amount, 0);
-    const isCurr = trip.id === state.currentTrip;
-    return `
-      <div class="trip-card ${isCurr ? 'curr' : ''}" onclick="selectTrip(${trip.id})">
-        <div class="tc-emoji">${trip.emoji}</div>
-        <div class="tc-info">
-          <h4>${trip.name}</h4>
-          <p>${trip.members.length} คน • ${trip.expenses.length} รายการ • ฿${fmt(total)}</p>
-        </div>
-        ${isCurr ? '<div class="tc-check">✓</div>' : ''}
-      </div>`;
-  }).join('');
-}
-function selectTrip(id) {
-  state.currentTrip = id;
-  closeModal('modal-trip');
-  render();
-}
-function submitTrip() {
-  const name  = document.getElementById('fi-trip-name').value.trim();
-  const emoji = document.getElementById('fi-trip-emoji').value.trim() || '✈️';
-  if (!name) return;
-  const id = Date.now();
-  state.trips.push({ id, name, emoji, members: [], expenses: [], settled: [] });
-  state.currentTrip = id;
-  document.getElementById('fi-trip-name').value = '';
-  document.getElementById('fi-trip-emoji').value = '';
-  closeModal('modal-trip');
-  render();
-  openModal('modal-member');
-  toast(`สร้างทริป "${name}" แล้ว ✓`);
-}
-
-// ── MARK SETTLED ──
-function markSettled(idx) {
-  const trip = currentTrip();
-  if (!trip.settled) trip.settled = [];
-  if (!trip.settled.includes(idx)) trip.settled.push(idx);
-  render();
-  toast('บันทึกการโอนแล้ว ✓');
-}
-
-// ── ENTER KEYS ──
-document.getElementById('fi-name').addEventListener('keydown',    e => { if (e.key==='Enter') document.getElementById('fi-amount').focus(); });
-document.getElementById('fi-amount').addEventListener('keydown',  e => { if (e.key==='Enter') submitExpense(); });
-document.getElementById('fi-member').addEventListener('keydown',  e => { if (e.key==='Enter') submitMember(); });
+document.getElementById('fi-name').addEventListener('keydown',      e => { if (e.key==='Enter') document.getElementById('fi-amount').focus(); });
+document.getElementById('fi-amount').addEventListener('keydown',    e => { if (e.key==='Enter') submitExpense(); });
+document.getElementById('fi-member').addEventListener('keydown',    e => { if (e.key==='Enter') submitMember(); });
 document.getElementById('fi-trip-name').addEventListener('keydown', e => { if (e.key==='Enter') document.getElementById('fi-trip-emoji').focus(); });
+document.getElementById('fi-trip-emoji').addEventListener('keydown',e => { if (e.key==='Enter') submitTrip(); });
+
+// drag-over highlight
+const uploadArea = document.getElementById('img-upload-area');
+uploadArea.addEventListener('dragover', e => { e.preventDefault(); uploadArea.classList.add('drag-over'); });
+uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('drag-over'));
+uploadArea.addEventListener('drop', e => {
+  e.preventDefault();
+  uploadArea.classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file && file.type.startsWith('image/')) {
+    if (file.size > 5 * 1024 * 1024) { toast('รูปภาพใหญ่เกิน 5MB', 'error'); return; }
+    const reader = new FileReader();
+    reader.onload = ev => { currentImageData = ev.target.result; showImagePreview(currentImageData); };
+    reader.readAsDataURL(file);
+  }
+});
 
 // ── INIT ──
 render();
-
-// Auto open trip modal if no trips
-if (state.trips.length === 0) {
-  setTimeout(() => openTripModal(), 400);
-}
+if (state.trips.length === 0) setTimeout(() => openTripModal(), 400);

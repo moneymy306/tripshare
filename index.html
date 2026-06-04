@@ -23,12 +23,8 @@
     </div>
   </div>
 
-  <!-- ════════════════════
-       PAGE: HOME
-  ═══════════════════════ -->
+  <!-- PAGE: HOME -->
   <div class="page active" id="page-home">
-
-    <!-- SUMMARY CARD -->
     <div class="summary-wrap">
       <div class="summary-card">
         <div class="summary-top">
@@ -57,68 +53,46 @@
       </div>
     </div>
 
-    <!-- MEMBERS -->
     <div class="members-wrap">
       <div class="s-head" style="margin-bottom:10px">
         <div class="s-title">สมาชิกในทริป</div>
       </div>
-      <div class="members-scroll" id="members-row">
-        <!-- filled by JS -->
-      </div>
+      <div class="members-scroll" id="members-row"></div>
     </div>
 
     <div class="s-divider"></div>
 
-    <!-- EXPENSES -->
     <div class="s-head">
       <div class="s-title">รายการค่าใช้จ่าย</div>
     </div>
-    <div class="exp-list" id="exp-list">
-      <!-- filled by JS -->
-    </div>
+    <div class="exp-list" id="exp-list"></div>
+  </div>
 
-  </div><!-- /page-home -->
-
-
-  <!-- ════════════════════
-       PAGE: BALANCE
-  ═══════════════════════ -->
+  <!-- PAGE: BALANCE -->
   <div class="page" id="page-balance">
     <div class="balance-hero">
       <div class="page-title">ยอดคงค้าง</div>
       <div class="page-sub">สรุปว่าใครต้องโอนให้ใครเท่าไหร่</div>
     </div>
-
-    <div class="s-head">
-      <div class="s-title">ยอดสุทธิแต่ละคน</div>
-    </div>
-    <div class="net-grid" id="net-grid"><!-- JS --></div>
-
+    <div class="s-head"><div class="s-title">ยอดสุทธิแต่ละคน</div></div>
+    <div class="net-grid" id="net-grid"></div>
     <div class="s-divider" style="margin-top:20px"></div>
+    <div class="s-head"><div class="s-title">รายการที่ต้องโอน</div></div>
+    <div class="settle-wrap" id="settle-wrap"></div>
+  </div>
 
-    <div class="s-head">
-      <div class="s-title">รายการที่ต้องโอน</div>
-    </div>
-    <div class="settle-wrap" id="settle-wrap"><!-- JS --></div>
-
-  </div><!-- /page-balance -->
-
-
-  <!-- ════════════════════
-       PAGE: STATS
-  ═══════════════════════ -->
+  <!-- PAGE: STATS -->
   <div class="page" id="page-stats">
     <div class="balance-hero">
       <div class="page-title">สรุปค่าใช้จ่าย</div>
       <div class="page-sub">ดูสัดส่วนการใช้จ่ายในแต่ละหมวด</div>
     </div>
-    <div id="stats-content"><!-- JS --></div>
-  </div><!-- /page-stats -->
+    <div id="stats-content"></div>
+  </div>
 
-</div><!-- .app -->
+</div>
 
-
-<!-- ── BOTTOM NAV ── -->
+<!-- BOTTOM NAV -->
 <nav class="bottom-nav">
   <div class="nav-item active" data-page="home" onclick="switchPage('home')">
     <div class="ni-icon">
@@ -126,13 +100,11 @@
     </div>
     <div class="ni-label">หน้าหลัก</div>
   </div>
-
   <div class="fab-wrap">
     <button class="fab" onclick="openAddExpense()" aria-label="เพิ่มค่าใช้จ่าย">
       <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
     </button>
   </div>
-
   <div class="nav-item" data-page="balance" onclick="switchPage('balance')">
     <div class="ni-icon">
       <svg class="ni-svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
@@ -143,23 +115,19 @@
 </nav>
 
 
-<!-- ════════════════════════════
-     MODAL: ADD EXPENSE
-═══════════════════════════════ -->
+<!-- ════ MODAL: ADD/EDIT EXPENSE ════ -->
 <div class="overlay" id="modal-expense">
   <div class="sheet">
     <span class="sheet-handle"></span>
-    <div class="sheet-title">เพิ่มค่าใช้จ่าย</div>
-    <div class="sheet-sub">บันทึกรายจ่ายใหม่ในทริปนี้</div>
+    <div class="sheet-title" id="modal-expense-title">เพิ่มค่าใช้จ่าย</div>
+    <div class="sheet-sub" id="modal-expense-sub">บันทึกรายจ่ายใหม่ในทริปนี้</div>
 
-    <!-- ชื่อรายการ -->
     <div class="fg">
       <label class="fl" for="fi-name">ชื่อรายการ</label>
       <input class="fi" id="fi-name" placeholder="เช่น ข้าวเย็นริมทะเล, ค่าน้ำมัน..." autocomplete="off"
              oninput="this.classList.remove('error')">
     </div>
 
-    <!-- จำนวนเงิน -->
     <div class="fg">
       <label class="fl" for="fi-amount">จำนวนเงิน (บาท)</label>
       <div class="fi-amount-wrap">
@@ -169,29 +137,43 @@
       </div>
     </div>
 
-    <!-- หมวดหมู่ -->
     <div class="fg">
       <label class="fl">หมวดหมู่</label>
-      <div class="cat-grid" id="cat-grid-wrap"><!-- JS --></div>
+      <div class="cat-grid" id="cat-grid-wrap"></div>
     </div>
 
-    <!-- จ่ายโดย -->
     <div class="fg">
       <label class="fl" for="fi-paidby">จ่ายโดย</label>
       <select class="fs" id="fi-paidby"></select>
     </div>
 
-    <!-- แบ่งให้ -->
     <div class="fg">
       <label class="fl">แบ่งให้ใครบ้าง</label>
       <div class="split-tabs">
         <div class="split-tab active" id="st-equal" onclick="setSplitMode('equal')">เฉลี่ยเท่ากัน</div>
         <div class="split-tab" id="st-custom" onclick="setSplitMode('custom')">เลือกเอง</div>
       </div>
-      <div class="p-list" id="p-list-wrap"><!-- JS --></div>
+      <div class="p-list" id="p-list-wrap"></div>
     </div>
 
-    <button class="btn-primary" onclick="submitExpense()">
+    <!-- ── IMAGE UPLOAD ── -->
+    <div class="fg">
+      <label class="fl">แนบรูปภาพ (ใบเสร็จ / หลักฐาน)</label>
+      <div class="img-upload-area" id="img-upload-area" onclick="document.getElementById('fi-image').click()">
+        <input type="file" id="fi-image" accept="image/*" style="display:none" onchange="handleImageSelect(event)">
+        <div class="img-placeholder" id="img-placeholder">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+          <span>แตะเพื่อเลือกรูป</span>
+          <span class="img-hint">PNG, JPG, HEIC ขนาดไม่เกิน 5MB</span>
+        </div>
+        <div class="img-preview-wrap" id="img-preview-wrap" style="display:none">
+          <img id="img-preview" src="" alt="preview">
+          <button class="img-remove-btn" onclick="removeImage(event)" title="ลบรูป">✕</button>
+        </div>
+      </div>
+    </div>
+
+    <button class="btn-primary" id="btn-submit-expense" onclick="submitExpense()">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
       บันทึกรายการ
     </button>
@@ -200,39 +182,83 @@
 </div>
 
 
-<!-- ════════════════════════════
-     MODAL: ADD MEMBER
-═══════════════════════════════ -->
+<!-- ════ MODAL: EXPENSE DETAIL (Read + Delete) ════ -->
+<div class="overlay" id="modal-detail">
+  <div class="sheet">
+    <span class="sheet-handle"></span>
+    <div class="detail-header">
+      <div class="detail-cat-icon" id="det-cat-icon"></div>
+      <div>
+        <div class="sheet-title" id="det-name" style="margin-bottom:2px"></div>
+        <div class="sheet-sub" id="det-date" style="margin-bottom:0"></div>
+      </div>
+    </div>
+
+    <div class="detail-amount-row">
+      <span class="detail-cur">฿</span>
+      <span class="detail-amount" id="det-amount"></span>
+    </div>
+
+    <div class="detail-grid">
+      <div class="detail-cell">
+        <div class="detail-cell-lbl">หมวดหมู่</div>
+        <div class="detail-cell-val" id="det-cat"></div>
+      </div>
+      <div class="detail-cell">
+        <div class="detail-cell-lbl">จ่ายโดย</div>
+        <div class="detail-cell-val" id="det-paidby"></div>
+      </div>
+      <div class="detail-cell" style="grid-column:1/-1">
+        <div class="detail-cell-lbl">แบ่งกับ</div>
+        <div class="detail-cell-val" id="det-participants"></div>
+      </div>
+    </div>
+
+    <!-- receipt image -->
+    <div id="det-img-wrap" style="display:none;margin-bottom:16px">
+      <div class="detail-cell-lbl" style="margin-bottom:8px">รูปภาพแนบ</div>
+      <img id="det-img" src="" alt="receipt" style="width:100%;border-radius:12px;object-fit:cover;max-height:220px;cursor:pointer"
+           onclick="openLightbox(this.src)">
+    </div>
+
+    <div class="detail-actions">
+      <button class="btn-outline-accent" onclick="openEditExpense()">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        แก้ไข
+      </button>
+      <button class="btn-outline-red" onclick="confirmDeleteExpense()">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+        ลบรายการ
+      </button>
+    </div>
+    <button class="btn-ghost" onclick="closeModal('modal-detail')">ปิด</button>
+  </div>
+</div>
+
+
+<!-- ════ MODAL: ADD/EDIT MEMBER ════ -->
 <div class="overlay" id="modal-member">
   <div class="sheet">
     <span class="sheet-handle"></span>
-    <div class="sheet-title">เพิ่มสมาชิก</div>
+    <div class="sheet-title" id="modal-member-title">เพิ่มสมาชิก</div>
     <div class="sheet-sub">ใครบ้างที่ไปทริปนี้ด้วยกัน?</div>
-
     <div class="fg">
       <label class="fl" for="fi-member">ชื่อ</label>
       <input class="fi" id="fi-member" placeholder="ชื่อเพื่อน..." autocomplete="off">
     </div>
-
-    <button class="btn-primary" onclick="submitMember()">เพิ่มสมาชิก</button>
+    <button class="btn-primary" id="btn-submit-member" onclick="submitMember()">เพิ่มสมาชิก</button>
     <button class="btn-ghost" onclick="closeModal('modal-member')">ปิด</button>
   </div>
 </div>
 
 
-<!-- ════════════════════════════
-     MODAL: TRIP SELECTOR
-═══════════════════════════════ -->
+<!-- ════ MODAL: TRIP SELECTOR ════ -->
 <div class="overlay" id="modal-trip">
   <div class="sheet">
     <span class="sheet-handle"></span>
     <div class="sheet-title">ทริปของคุณ</div>
-    <div class="sheet-sub">เลือกทริปที่ต้องการจัดการ</div>
-
-    <!-- รายการทริป -->
-    <div id="trip-list" style="margin-bottom:16px"><!-- JS --></div>
-
-    <!-- สร้างทริปใหม่ -->
+    <div class="sheet-sub">เลือก แก้ไข หรือสร้างทริปใหม่</div>
+    <div id="trip-list" style="margin-bottom:16px"></div>
     <div style="border-top:1px solid var(--b1);padding-top:16px">
       <div class="fl" style="display:block;margin-bottom:10px">สร้างทริปใหม่</div>
       <div class="fg">
@@ -243,8 +269,56 @@
       </div>
       <button class="btn-primary" onclick="submitTrip()">สร้างทริปใหม่</button>
     </div>
-
     <button class="btn-ghost" onclick="closeModal('modal-trip')">ปิด</button>
+  </div>
+</div>
+
+
+<!-- ════ MODAL: EDIT TRIP ════ -->
+<div class="overlay" id="modal-edit-trip">
+  <div class="sheet">
+    <span class="sheet-handle"></span>
+    <div class="sheet-title">แก้ไขทริป</div>
+    <div class="sheet-sub">เปลี่ยนชื่อหรือ emoji ของทริปนี้</div>
+    <div class="fg">
+      <label class="fl" for="fi-edit-trip-name">ชื่อทริป</label>
+      <input class="fi" id="fi-edit-trip-name" placeholder="ชื่อทริป..." autocomplete="off">
+    </div>
+    <div class="fg">
+      <label class="fl" for="fi-edit-trip-emoji">Emoji</label>
+      <input class="fi" id="fi-edit-trip-emoji" placeholder="🏔️" style="font-size:18px">
+    </div>
+    <div class="member-manage-section">
+      <div class="fl" style="display:block;margin-bottom:10px">สมาชิกในทริป</div>
+      <div id="member-manage-list"></div>
+    </div>
+    <button class="btn-primary" onclick="submitEditTrip()">บันทึกการเปลี่ยนแปลง</button>
+    <button class="btn-outline-red" style="margin-top:8px" onclick="confirmDeleteTrip()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+      ลบทริปนี้
+    </button>
+    <button class="btn-ghost" onclick="closeModal('modal-edit-trip')">ยกเลิก</button>
+  </div>
+</div>
+
+
+<!-- ════ MODAL: LIGHTBOX ════ -->
+<div class="overlay" id="modal-lightbox" onclick="closeModal('modal-lightbox')">
+  <div class="lightbox-inner">
+    <img id="lightbox-img" src="" alt="receipt full">
+    <button class="lightbox-close" onclick="closeModal('modal-lightbox')">✕</button>
+  </div>
+</div>
+
+
+<!-- ════ CONFIRM DIALOG ════ -->
+<div class="overlay" id="modal-confirm">
+  <div class="sheet confirm-sheet">
+    <span class="sheet-handle"></span>
+    <div class="sheet-title" id="confirm-title">ยืนยันการลบ</div>
+    <div class="sheet-sub" id="confirm-msg">คุณแน่ใจหรือไม่?</div>
+    <button class="btn-outline-red" id="confirm-ok-btn" onclick="">ยืนยัน</button>
+    <button class="btn-ghost" onclick="closeModal('modal-confirm')">ยกเลิก</button>
   </div>
 </div>
 
