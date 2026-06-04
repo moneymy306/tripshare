@@ -63,14 +63,14 @@ function tripById(id) { return state.trips.find(t => t.id === id); }
 function currentTrip() { return tripById(state.currentTrip) || state.trips[0] || null; }
 
 function formatTripDateRange(startDate, endDate) {
-  const fmt = d => {
+  const fmtDate = d => {
     if (!d) return null;
     const [y, m, day] = d.split('-');
     const thYear = parseInt(y) + 543;
     const months = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
     return `${parseInt(day)} ${months[parseInt(m)-1]} ${thYear}`;
   };
-  const s = fmt(startDate), e = fmt(endDate);
+  const s = fmtDate(startDate), e = fmtDate(endDate);
   if (s && e) return `${s} – ${e}`;
   if (s) return `เริ่ม ${s}`;
   if (e) return `ถึง ${e}`;
