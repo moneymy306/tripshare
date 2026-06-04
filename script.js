@@ -25,31 +25,45 @@ const CAT_MAP = {
 };
 
 // ── STATE ──
-let state = loadState() || { currentTrip: null, trips: [] };
+let state = { currentTrip: null, trips: [] };
 
 // Editing state
 let selectedCat        = '🍜 อาหาร';
 let selectedParticipants = [];
 let splitMode          = 'equal';   // 'self' | 'equal' | 'custom'
-let currentImageData   = null;   // base64 string of selected image
-let editingExpenseId   = null;   // null = create, else = update
-let viewingExpenseId   = null;   // for detail modal
-let editingTripId      = null;   // for edit-trip modal
-let editingMemberName  = null;   // null = add, else = rename
+let currentImageData   = null;
+let editingExpenseId   = null;
+let viewingExpenseId   = null;
+let editingTripId      = null;
+let editingMemberName  = null;
+let _saveTimer         = null;
 
-// ── PERSIST ──
+// ── PERSIST (Firebase) ──
 function saveState() {
-  try { localStorage.setItem('tripshare_v4', JSON.stringify(state)); } catch(e) {}
+  // debounce — รอ 600ms หลังการเปลี่ยนแปลงสุดท้ายแล้วค่อย save
+  clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(async () => {
+    try {
+      if (window._setDoc && window._DOC) {
+        await window._setDoc(window._DOC, { state: JSON.stringify(state) });
+      }
+    } catch(e) { console.error('saveState error', e); }
+  }, 600);
 }
-function loadState() {
-  try {
-    const d = localStorage.getItem('tripshare_v4');
-    if (d) return JSON.parse(d);
-    // migrate v3
-    const old = localStorage.getItem('tripshare_v3');
-    return old ? JSON.parse(old) : null;
-  } catch(e) { return null; }
-}
+
+// callback ที่ Firebase listener จะเรียกเมื่อมีข้อมูลใหม่จาก cloud
+window._onRemoteState = function(remote) {
+  // ถ้ากำลัง save อยู่ (debounce ยังไม่หมด) ไม่รับข้อมูลเก่ากลับมา
+  if (_saveTimer) return;
+  state = remote;
+  render();
+  // ถ้ายังไม่เคยโหลดครั้งแรก ให้ถามเปิด trip modal
+  if (!_initDone) {
+    _initDone = true;
+    showLoadingOverlay(false);
+    if (state.trips.length === 0) setTimeout(() => openTripModal(), 400);
+  }
+};
 
 // ── HELPERS ──
 function pal(idx) { return PALETTES[idx % PALETTES.length]; }
@@ -948,5 +962,21 @@ uploadArea.addEventListener('drop', e => {
 });
 
 // ── INIT ──
-render();
-if (state.trips.length === 0) setTimeout(() => openTripModal(), 400);
+let _initDone = false;
+
+function showLoadingOverlay(show) {
+  let el = document.getElementById('loading-overlay');
+  if (!el) return;
+  el.style.display = show ? 'flex' : 'none';
+}
+
+// แสดง loading จนกว่า Firebase จะส่งข้อมูลมา (timeout 8s กัน stuck)
+showLoadingOverlay(true);
+render(); // render ตัวเปล่าก่อน ไม่ให้หน้าว่างค้าง
+setTimeout(() => {
+  if (!_initDone) {
+    _initDone = true;
+    showLoadingOverlay(false);
+    if (state.trips.length === 0) setTimeout(() => openTripModal(), 200);
+  }
+}, 8000);

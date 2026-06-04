@@ -350,6 +350,76 @@
 <!-- TOAST -->
 <div class="toast" id="toast"></div>
 
+<!-- LOADING OVERLAY -->
+<div id="loading-overlay">
+  <div class="loading-box">
+    <div class="loading-spinner"></div>
+    <div class="loading-text">กำลังเชื่อมต่อ...</div>
+  </div>
+</div>
+
+
+
+
+
+
+
+
+
+<!-- ── FIREBASE SDK ── -->
+<script type="module">
+  import { initializeApp }              from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+  import { getFirestore, doc, onSnapshot, setDoc, getDoc }
+                                         from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+  import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+
+  // ════ วางค่า Firebase config ของคุณตรงนี้ ════
+
+ 
+  const firebaseConfig = {
+    apiKey: "AIzaSyAyelmdDXyIV_8uTRc-VqOcnk3xFc82OSI",
+    authDomain: "tripshare-2f52a.firebaseapp.com",
+    projectId: "tripshare-2f52a",
+    storageBucket: "tripshare-2f52a.firebasestorage.app",
+    messagingSenderId: "614129208730",
+    appId: "1:614129208730:web:1c1ddb3b0865066a183e23",
+    measurementId: "G-PSEZDLK3M4"
+  };
+
+  // Initialize Firebase
+  const app = initializeApp(firebaseConfig);
+  const analytics = getAnalytics(app);
+</script>
+  // ═══════════════════════════════════════════════
+
+  const app  = initializeApp(firebaseConfig);
+  const db   = getFirestore(app);
+  const auth = getAuth(app);
+  const DOC  = doc(db, "tripshare", "shared");   // document เดียวร่วมกันทุกคน
+
+  // เปิดให้ script.js เรียกใช้ได้
+  window._db    = db;
+  window._DOC   = DOC;
+  window._setDoc = setDoc;
+
+  // Anonymous sign-in (ต้องเปิด Anonymous Auth ใน Firebase Console)
+  signInAnonymously(auth).catch(console.error);
+
+  // Real-time listener — เมื่อ Firestore อัปเดต ให้ re-render
+  onSnapshot(DOC, snap => {
+    if (snap.exists()) {
+      const remote = snap.data().state;
+      if (remote) {
+        window._state = JSON.parse(remote);
+        if (window._onRemoteState) window._onRemoteState(window._state);
+      }
+    } else {
+      // ยังไม่มีข้อมูลบน cloud — สร้างเปล่าไว้
+      setDoc(DOC, { state: JSON.stringify({ currentTrip: null, trips: [] }) });
+    }
+  });
+</script>
+
 <script src="script.js"></script>
 </body>
 </html>
