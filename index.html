@@ -269,6 +269,17 @@
       <div class="fg">
         <input class="fi" id="fi-trip-emoji" placeholder="Emoji เช่น 🏔️  🏖️  🌃  🏕️" style="font-size:18px">
       </div>
+      <div class="date-row">
+        <div class="fg" style="flex:1">
+          <label class="fl" for="fi-trip-start">เริ่มต้น</label>
+          <input class="fi fi-date" id="fi-trip-start" type="date">
+        </div>
+        <div class="date-sep">→</div>
+        <div class="fg" style="flex:1">
+          <label class="fl" for="fi-trip-end">สิ้นสุด</label>
+          <input class="fi fi-date" id="fi-trip-end" type="date">
+        </div>
+      </div>
       <button class="btn-primary" onclick="submitTrip()">สร้างทริปใหม่</button>
     </div>
     <button class="btn-ghost" onclick="closeModal('modal-trip')">ปิด</button>
@@ -289,6 +300,17 @@
     <div class="fg">
       <label class="fl" for="fi-edit-trip-emoji">Emoji</label>
       <input class="fi" id="fi-edit-trip-emoji" placeholder="🏔️" style="font-size:18px">
+    </div>
+    <div class="date-row">
+      <div class="fg" style="flex:1">
+        <label class="fl" for="fi-edit-trip-start">เริ่มต้น</label>
+        <input class="fi fi-date" id="fi-edit-trip-start" type="date">
+      </div>
+      <div class="date-sep">→</div>
+      <div class="fg" style="flex:1">
+        <label class="fl" for="fi-edit-trip-end">สิ้นสุด</label>
+        <input class="fi fi-date" id="fi-edit-trip-end" type="date">
+      </div>
     </div>
     <div class="member-manage-section">
       <div class="fl" style="display:block;margin-bottom:10px">สมาชิกในทริป</div>

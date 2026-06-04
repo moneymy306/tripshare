@@ -62,6 +62,21 @@ function now() {
 function tripById(id) { return state.trips.find(t => t.id === id); }
 function currentTrip() { return tripById(state.currentTrip) || state.trips[0] || null; }
 
+function formatTripDateRange(startDate, endDate) {
+  const fmt = d => {
+    if (!d) return null;
+    const [y, m, day] = d.split('-');
+    const thYear = parseInt(y) + 543;
+    const months = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+    return `${parseInt(day)} ${months[parseInt(m)-1]} ${thYear}`;
+  };
+  const s = fmt(startDate), e = fmt(endDate);
+  if (s && e) return `${s} – ${e}`;
+  if (s) return `เริ่ม ${s}`;
+  if (e) return `ถึง ${e}`;
+  return null;
+}
+
 // ── TOAST ──
 function toast(msg, type = '') {
   const el = document.getElementById('toast');
@@ -105,7 +120,19 @@ function renderHome(trip) {
   document.getElementById('sg-count').textContent = trip.expenses.length;
   document.getElementById('sg-per').textContent = '฿' + fmt(perP);
   document.getElementById('sg-members').textContent = trip.members.length;
-  document.getElementById('trip-pill-label').textContent = trip.emoji + ' ' + trip.name;
+  const dateRange = formatTripDateRange(trip.startDate, trip.endDate);
+  const pillEl = document.getElementById('trip-pill-label');
+  pillEl.textContent = trip.emoji + ' ' + trip.name;
+  // แสดงวันที่ใต้ pill ถ้ามี
+  let dateEl = document.getElementById('trip-date-range');
+  if (!dateEl) {
+    dateEl = document.createElement('div');
+    dateEl.id = 'trip-date-range';
+    dateEl.className = 'trip-date-range';
+    pillEl.parentNode.insertBefore(dateEl, pillEl.nextSibling);
+  }
+  dateEl.textContent = dateRange || '';
+  dateEl.style.display = dateRange ? 'block' : 'none';
   renderMembers(trip);
   renderExpenses(trip);
 }
@@ -682,11 +709,13 @@ function renderTripList() {
   container.innerHTML = state.trips.map(trip => {
     const total = trip.expenses.reduce((s, e) => s + e.amount, 0);
     const isCurr = trip.id === state.currentTrip;
+    const dateStr = formatTripDateRange(trip.startDate, trip.endDate);
     return `
       <div class="trip-card ${isCurr ? 'curr' : ''}">
         <div class="tc-emoji" onclick="selectTrip(${trip.id})">${trip.emoji}</div>
         <div class="tc-info" onclick="selectTrip(${trip.id})">
           <h4>${trip.name}</h4>
+          ${dateStr ? `<div class="tc-dates">${dateStr}</div>` : ''}
           <p>${trip.members.length} คน • ${trip.expenses.length} รายการ • ฿${fmt(total)}</p>
         </div>
         <button class="tc-edit-btn" onclick="openEditTrip(${trip.id})" title="แก้ไข">
@@ -704,14 +733,18 @@ function selectTrip(id) {
 }
 
 function submitTrip() {
-  const name  = document.getElementById('fi-trip-name').value.trim();
-  const emoji = document.getElementById('fi-trip-emoji').value.trim() || '✈️';
+  const name      = document.getElementById('fi-trip-name').value.trim();
+  const emoji     = document.getElementById('fi-trip-emoji').value.trim() || '✈️';
+  const startDate = document.getElementById('fi-trip-start').value;
+  const endDate   = document.getElementById('fi-trip-end').value;
   if (!name) return;
   const id = Date.now();
-  state.trips.push({ id, name, emoji, members: [], expenses: [], settled: [] });
+  state.trips.push({ id, name, emoji, startDate, endDate, members: [], expenses: [], settled: [] });
   state.currentTrip = id;
   document.getElementById('fi-trip-name').value  = '';
   document.getElementById('fi-trip-emoji').value = '';
+  document.getElementById('fi-trip-start').value = '';
+  document.getElementById('fi-trip-end').value   = '';
   closeModal('modal-trip');
   render();
   openAddMember();
@@ -725,6 +758,8 @@ function openEditTrip(id) {
   if (!trip) return;
   document.getElementById('fi-edit-trip-name').value  = trip.name;
   document.getElementById('fi-edit-trip-emoji').value = trip.emoji;
+  document.getElementById('fi-edit-trip-start').value = trip.startDate || '';
+  document.getElementById('fi-edit-trip-end').value   = trip.endDate   || '';
   renderMemberManageList(trip);
   closeModal('modal-trip');
   openModal('modal-edit-trip');
@@ -765,13 +800,17 @@ function removeMember(name, tripId) {
 }
 
 function submitEditTrip() {
-  const name  = document.getElementById('fi-edit-trip-name').value.trim();
-  const emoji = document.getElementById('fi-edit-trip-emoji').value.trim() || '✈️';
+  const name      = document.getElementById('fi-edit-trip-name').value.trim();
+  const emoji     = document.getElementById('fi-edit-trip-emoji').value.trim() || '✈️';
+  const startDate = document.getElementById('fi-edit-trip-start').value;
+  const endDate   = document.getElementById('fi-edit-trip-end').value;
   if (!name) return;
   const trip = tripById(editingTripId);
   if (!trip) return;
-  trip.name  = name;
-  trip.emoji = emoji;
+  trip.name      = name;
+  trip.emoji     = emoji;
+  trip.startDate = startDate;
+  trip.endDate   = endDate;
   closeModal('modal-edit-trip');
   render();
   toast(`อัพเดททริป "${name}" แล้ว ✓`);
