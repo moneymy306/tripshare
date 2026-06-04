@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#09090c">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>TripShare — หารค่าใช้จ่ายกับเพื่อน</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ── TOPBAR ── -->
+  <div class="topbar">
+    <div class="logo">Trip<em>Share</em></div>
+    <div class="trip-switcher" onclick="openTripModal()">
+      <span class="t-emoji" id="trip-switcher-emoji">✈️</span>
+      <span class="t-name" id="trip-switcher-name">เลือกทริป</span>
+      <span class="chevron">▾</span>
+    </div>
+  </div>
+
+  <!-- ════════════════════
+       PAGE: HOME
+  ═══════════════════════ -->
+  <div class="page active" id="page-home">
+
+    <!-- SUMMARY CARD -->
+    <div class="summary-wrap">
+      <div class="summary-card">
+        <div class="summary-top">
+          <div>
+            <div class="summary-label">ยอดรวมทั้งหมด</div>
+            <div class="summary-total">
+              <span class="cur">฿</span><span id="summary-total">0</span>
+            </div>
+          </div>
+          <div class="trip-pill" id="trip-pill-label">—</div>
+        </div>
+        <div class="summary-grid">
+          <div class="sg-item">
+            <div class="sg-num" id="sg-count">0</div>
+            <div class="sg-lbl">รายการ</div>
+          </div>
+          <div class="sg-item">
+            <div class="sg-num" id="sg-per">฿0</div>
+            <div class="sg-lbl">เฉลี่ย/คน</div>
+          </div>
+          <div class="sg-item">
+            <div class="sg-num" id="sg-members">0</div>
+            <div class="sg-lbl">สมาชิก</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MEMBERS -->
+    <div class="members-wrap">
+      <div class="s-head" style="margin-bottom:10px">
+        <div class="s-title">สมาชิกในทริป</div>
+      </div>
+      <div class="members-scroll" id="members-row">
+        <!-- filled by JS -->
+      </div>
+    </div>
+
+    <div class="s-divider"></div>
+
+    <!-- EXPENSES -->
+    <div class="s-head">
+      <div class="s-title">รายการค่าใช้จ่าย</div>
+    </div>
+    <div class="exp-list" id="exp-list">
+      <!-- filled by JS -->
+    </div>
+
+  </div><!-- /page-home -->
+
+
+  <!-- ════════════════════
+       PAGE: BALANCE
+  ═══════════════════════ -->
+  <div class="page" id="page-balance">
+    <div class="balance-hero">
+      <div class="page-title">ยอดคงค้าง</div>
+      <div class="page-sub">สรุปว่าใครต้องโอนให้ใครเท่าไหร่</div>
+    </div>
+
+    <div class="s-head">
+      <div class="s-title">ยอดสุทธิแต่ละคน</div>
+    </div>
+    <div class="net-grid" id="net-grid"><!-- JS --></div>
+
+    <div class="s-divider" style="margin-top:20px"></div>
+
+    <div class="s-head">
+      <div class="s-title">รายการที่ต้องโอน</div>
+    </div>
+    <div class="settle-wrap" id="settle-wrap"><!-- JS --></div>
+
+  </div><!-- /page-balance -->
+
+
+  <!-- ════════════════════
+       PAGE: STATS
+  ═══════════════════════ -->
+  <div class="page" id="page-stats">
+    <div class="balance-hero">
+      <div class="page-title">สรุปค่าใช้จ่าย</div>
+      <div class="page-sub">ดูสัดส่วนการใช้จ่ายในแต่ละหมวด</div>
+    </div>
+    <div id="stats-content"><!-- JS --></div>
+  </div><!-- /page-stats -->
+
+</div><!-- .app -->
+
+
+<!-- ── BOTTOM NAV ── -->
+<nav class="bottom-nav">
+  <div class="nav-item active" data-page="home" onclick="switchPage('home')">
+    <div class="ni-icon">
+      <svg class="ni-svg" viewBox="0 0 24 24"><path d="M3 9.5L12 3l9 6.5V20a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V9.5z"/><path d="M9 21V12h6v9"/></svg>
+    </div>
+    <div class="ni-label">หน้าหลัก</div>
+  </div>
+
+  <div class="fab-wrap">
+    <button class="fab" onclick="openAddExpense()" aria-label="เพิ่มค่าใช้จ่าย">
+      <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    </button>
+  </div>
+
+  <div class="nav-item" data-page="balance" onclick="switchPage('balance')">
+    <div class="ni-icon">
+      <svg class="ni-svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+      <div class="ni-dot" id="balance-dot"></div>
+    </div>
+    <div class="ni-label">ยอดคงค้าง</div>
+  </div>
+</nav>
+
+
+<!-- ════════════════════════════
+     MODAL: ADD EXPENSE
+═══════════════════════════════ -->
+<div class="overlay" id="modal-expense">
+  <div class="sheet">
+    <span class="sheet-handle"></span>
+    <div class="sheet-title">เพิ่มค่าใช้จ่าย</div>
+    <div class="sheet-sub">บันทึกรายจ่ายใหม่ในทริปนี้</div>
+
+    <!-- ชื่อรายการ -->
+    <div class="fg">
+      <label class="fl" for="fi-name">ชื่อรายการ</label>
+      <input class="fi" id="fi-name" placeholder="เช่น ข้าวเย็นริมทะเล, ค่าน้ำมัน..." autocomplete="off"
+             oninput="this.classList.remove('error')">
+    </div>
+
+    <!-- จำนวนเงิน -->
+    <div class="fg">
+      <label class="fl" for="fi-amount">จำนวนเงิน (บาท)</label>
+      <div class="fi-amount-wrap">
+        <span class="fi-cur">฿</span>
+        <input class="fi fi-amount" id="fi-amount" type="number" min="0" step="1"
+               placeholder="0" oninput="this.classList.remove('error')">
+      </div>
+    </div>
+
+    <!-- หมวดหมู่ -->
+    <div class="fg">
+      <label class="fl">หมวดหมู่</label>
+      <div class="cat-grid" id="cat-grid-wrap"><!-- JS --></div>
+    </div>
+
+    <!-- จ่ายโดย -->
+    <div class="fg">
+      <label class="fl" for="fi-paidby">จ่ายโดย</label>
+      <select class="fs" id="fi-paidby"></select>
+    </div>
+
+    <!-- แบ่งให้ -->
+    <div class="fg">
+      <label class="fl">แบ่งให้ใครบ้าง</label>
+      <div class="split-tabs">
+        <div class="split-tab active" id="st-equal" onclick="setSplitMode('equal')">เฉลี่ยเท่ากัน</div>
+        <div class="split-tab" id="st-custom" onclick="setSplitMode('custom')">เลือกเอง</div>
+      </div>
+      <div class="p-list" id="p-list-wrap"><!-- JS --></div>
+    </div>
+
+    <button class="btn-primary" onclick="submitExpense()">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      บันทึกรายการ
+    </button>
+    <button class="btn-ghost" onclick="closeModal('modal-expense')">ยกเลิก</button>
+  </div>
+</div>
+
+
+<!-- ════════════════════════════
+     MODAL: ADD MEMBER
+═══════════════════════════════ -->
+<div class="overlay" id="modal-member">
+  <div class="sheet">
+    <span class="sheet-handle"></span>
+    <div class="sheet-title">เพิ่มสมาชิก</div>
+    <div class="sheet-sub">ใครบ้างที่ไปทริปนี้ด้วยกัน?</div>
+
+    <div class="fg">
+      <label class="fl" for="fi-member">ชื่อ</label>
+      <input class="fi" id="fi-member" placeholder="ชื่อเพื่อน..." autocomplete="off">
+    </div>
+
+    <button class="btn-primary" onclick="submitMember()">เพิ่มสมาชิก</button>
+    <button class="btn-ghost" onclick="closeModal('modal-member')">ปิด</button>
+  </div>
+</div>
+
+
+<!-- ════════════════════════════
+     MODAL: TRIP SELECTOR
+═══════════════════════════════ -->
+<div class="overlay" id="modal-trip">
+  <div class="sheet">
+    <span class="sheet-handle"></span>
+    <div class="sheet-title">ทริปของคุณ</div>
+    <div class="sheet-sub">เลือกทริปที่ต้องการจัดการ</div>
+
+    <!-- รายการทริป -->
+    <div id="trip-list" style="margin-bottom:16px"><!-- JS --></div>
+
+    <!-- สร้างทริปใหม่ -->
+    <div style="border-top:1px solid var(--b1);padding-top:16px">
+      <div class="fl" style="display:block;margin-bottom:10px">สร้างทริปใหม่</div>
+      <div class="fg">
+        <input class="fi" id="fi-trip-name" placeholder="ชื่อทริป เช่น ทริปเชียงใหม่..." autocomplete="off">
+      </div>
+      <div class="fg">
+        <input class="fi" id="fi-trip-emoji" placeholder="Emoji เช่น 🏔️  🏖️  🌃  🏕️" style="font-size:18px">
+      </div>
+      <button class="btn-primary" onclick="submitTrip()">สร้างทริปใหม่</button>
+    </div>
+
+    <button class="btn-ghost" onclick="closeModal('modal-trip')">ปิด</button>
+  </div>
+</div>
+
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<script src="script.js"></script>
+</body>
+</html>
