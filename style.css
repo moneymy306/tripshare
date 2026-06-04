@@ -234,7 +234,50 @@ body::before {
 .btn-settle:hover { background: rgba(16,201,138,0.2); }
 .tag-done { background: var(--s3); border-radius: 40px; padding: 4px 10px; font-size: 10px; color: var(--t4); white-space: nowrap; }
 
-/* ── STATS ── */
+/* Split tabs — 3 columns support */
+.split-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; }
+
+/* Self-paid note */
+.self-paid-note {
+  display: flex; align-items: flex-start; gap: 10px;
+  background: var(--amber-lo); border: 1px solid rgba(245,166,35,0.25);
+  border-radius: var(--r-md); padding: 12px 14px;
+  font-size: 13px; color: var(--amber); line-height: 1.5;
+}
+.self-paid-note strong { font-weight: 600; }
+
+/* Expense self tag */
+.exp-self-tag {
+  font-size: 9px; font-weight: 600; letter-spacing: .4px;
+  background: var(--amber-lo); color: var(--amber);
+  border: 1px solid rgba(245,166,35,0.3);
+  border-radius: 20px; padding: 2px 7px;
+}
+
+/* ── TRIP SUMMARY ── */
+.trip-summary-wrap { padding: 0 20px; display: flex; flex-direction: column; gap: 10px; margin-bottom: 24px; }
+.tsummary-card {
+  background: var(--s2); border: 1px solid var(--b1);
+  border-radius: var(--r-lg); overflow: hidden;
+}
+.tsummary-header {
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 14px 12px;
+}
+.tsummary-name { font-size: 14px; font-weight: 600; color: var(--t1); margin-bottom: 2px; }
+.tsummary-sub { font-size: 11px; color: var(--t3); }
+.tsummary-badge {
+  font-size: 11px; font-weight: 600; border-radius: 20px;
+  padding: 4px 10px; white-space: nowrap; flex-shrink: 0;
+}
+.badge-collect { background: var(--green-lo); color: var(--green); border: 1px solid rgba(16,201,138,0.25); }
+.badge-owe     { background: var(--red-lo);   color: var(--red);   border: 1px solid rgba(255,90,90,0.25); }
+.badge-ok      { background: var(--s3);       color: var(--t3);    border: 1px solid var(--b1); }
+.tsummary-items { border-top: 1px solid var(--b0); padding: 10px 14px; display: flex; flex-direction: column; gap: 7px; }
+.tsummary-row { display: flex; align-items: center; gap: 8px; }
+.tsummary-cat { font-size: 14px; flex-shrink: 0; }
+.tsummary-iname { flex: 1; font-size: 12px; color: var(--t2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tsummary-iamt { font-size: 12px; font-weight: 600; color: var(--t1); flex-shrink: 0; }
 .stats-pad { padding: 0 20px; }
 .stat-bar-item { margin-bottom: 16px; }
 .sbi-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
@@ -316,8 +359,7 @@ body::before {
 .cat-item .ci-label { font-size: 9px; color: var(--t3); text-align: center; letter-spacing: .2px; }
 .cat-item.sel .ci-label { color: var(--accent-hi); }
 
-/* Split tabs */
-.split-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; }
+/* Split tab */
 .split-tab { padding: 9px; background: var(--s2); border: 1.5px solid var(--b1); border-radius: var(--r-md); text-align: center; font-size: 13px; cursor: pointer; transition: all .2s; color: var(--t2); }
 .split-tab.active { border-color: var(--accent); background: var(--accent-lo); color: var(--accent-hi); }
 

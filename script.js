@@ -30,7 +30,7 @@ let state = loadState() || { currentTrip: null, trips: [] };
 // Editing state
 let selectedCat        = '🍜 อาหาร';
 let selectedParticipants = [];
-let splitMode          = 'equal';
+let splitMode          = 'equal';   // 'self' | 'equal' | 'custom'
 let currentImageData   = null;   // base64 string of selected image
 let editingExpenseId   = null;   // null = create, else = update
 let viewingExpenseId   = null;   // for detail modal
@@ -143,8 +143,10 @@ function renderExpenses(trip) {
     const pIdx = trip.members.indexOf(exp.paidBy);
     const pp   = pal(pIdx >= 0 ? pIdx : 0);
     const emoji = exp.cat.split(' ')[0];
-    const perP  = exp.participants.length > 0 ? exp.amount / exp.participants.length : exp.amount;
+    const isSelf = exp.splitMode === 'self';
+    const perP   = isSelf ? exp.amount : (exp.participants && exp.participants.length > 0 ? exp.amount / exp.participants.length : exp.amount);
     const hasImg = exp.image ? `<div class="exp-img-badge">📎</div>` : '';
+    const selfTag = isSelf ? `<span class="exp-self-tag">จ่ายเอง</span>` : '';
     return `
       <div class="exp-card" style="--cat-color:${cat.color};--cat-bg:${cat.bg}" onclick="openExpenseDetail(${exp.id})">
         <div class="exp-icon-wrap">${emoji}</div>
@@ -159,7 +161,7 @@ function renderExpenses(trip) {
         </div>
         <div class="exp-right">
           <div class="exp-total">฿${fmt(exp.amount)}</div>
-          <div class="exp-per">฿${fmt(perP)}/คน</div>
+          <div class="exp-per">${isSelf ? selfTag : `฿${fmt(perP)}/คน`}</div>
         </div>
       </div>`;
   }).join('');
@@ -171,16 +173,23 @@ function emptyState(icon, title, sub) {
 
 // ── BALANCE ──
 function calcBalances(trip) {
-  const paid = {}, owed = {};
-  trip.members.forEach(m => { paid[m] = 0; owed[m] = 0; });
+  const paid = {}, owed = {}, selfTotal = {};
+  trip.members.forEach(m => { paid[m] = 0; owed[m] = 0; selfTotal[m] = 0; });
   trip.expenses.forEach(exp => {
     paid[exp.paidBy] = (paid[exp.paidBy] || 0) + exp.amount;
-    const share = exp.amount / exp.participants.length;
-    exp.participants.forEach(p => { owed[p] = (owed[p] || 0) + share; });
+    if (exp.splitMode === 'self') {
+      // จ่ายเอง: ผู้จ่ายรับภาระทั้งหมด ไม่แบ่งกับใคร
+      owed[exp.paidBy] = (owed[exp.paidBy] || 0) + exp.amount;
+      selfTotal[exp.paidBy] = (selfTotal[exp.paidBy] || 0) + exp.amount;
+    } else {
+      const parts = exp.participants && exp.participants.length > 0 ? exp.participants : [exp.paidBy];
+      const share = exp.amount / parts.length;
+      parts.forEach(p => { owed[p] = (owed[p] || 0) + share; });
+    }
   });
   const net = {};
   trip.members.forEach(m => { net[m] = (paid[m] || 0) - (owed[m] || 0); });
-  return { paid, owed, net };
+  return { paid, owed, net, selfTotal };
 }
 
 function calcSettlements(net) {
@@ -211,6 +220,7 @@ function renderBalance(trip) {
   if (!trip || trip.members.length === 0) {
     netGrid.innerHTML    = `<div style="grid-column:1/-1">${emptyState('👤','ยังไม่มีสมาชิก','เพิ่มสมาชิกก่อนนะ')}</div>`;
     settleWrap.innerHTML = '';
+    renderTripSummary(trip);
     return;
   }
   const { paid, net } = calcBalances(trip);
@@ -244,32 +254,90 @@ function renderBalance(trip) {
   const settled = trip.settled || [];
   if (settlements.length === 0) {
     settleWrap.innerHTML = emptyState('🎉','ไม่มียอดค้างชำระ','ทุกคนเท่ากันหมดแล้ว!');
-    return;
+  } else {
+    settleWrap.innerHTML = settlements.map((s, idx) => {
+      const fi = trip.members.indexOf(s.from);
+      const ti = trip.members.indexOf(s.to);
+      const fp = pal(fi >= 0 ? fi : 0);
+      const tp = pal(ti >= 0 ? ti : 0);
+      const done = settled.includes(idx);
+      return `
+        <div class="settle-card ${done ? 'done' : ''}">
+          <div class="settle-avatars">
+            <div class="settle-av" style="background:${fp.bg};color:${fp.fg}">${initials(s.from)}</div>
+            <div class="settle-av" style="background:${tp.bg};color:${tp.fg}">${initials(s.to)}</div>
+          </div>
+          <div class="settle-info">
+            <div class="settle-names">${s.from}<span class="arr"> → </span>${s.to}</div>
+            <div class="settle-note">${done ? '✓ โอนแล้ว' : 'รอการโอนเงิน'}</div>
+          </div>
+          <div class="settle-right">
+            <div class="settle-amt">฿${fmt(s.amount)}</div>
+            ${done
+              ? `<div class="tag-done">โอนแล้ว</div>`
+              : `<button class="btn-settle" onclick="markSettled(${idx})">โอนแล้ว ✓</button>`}
+          </div>
+        </div>`;
+    }).join('');
   }
-  settleWrap.innerHTML = settlements.map((s, idx) => {
-    const fi = trip.members.indexOf(s.from);
-    const ti = trip.members.indexOf(s.to);
-    const fp = pal(fi >= 0 ? fi : 0);
-    const tp = pal(ti >= 0 ? ti : 0);
-    const done = settled.includes(idx);
-    return `
-      <div class="settle-card ${done ? 'done' : ''}">
-        <div class="settle-avatars">
-          <div class="settle-av" style="background:${fp.bg};color:${fp.fg}">${initials(s.from)}</div>
-          <div class="settle-av" style="background:${tp.bg};color:${tp.fg}">${initials(s.to)}</div>
+
+  renderTripSummary(trip);
+}
+
+function renderTripSummary(trip) {
+  let el = document.getElementById('trip-summary-section');
+  if (!el) return;
+  if (!trip || trip.expenses.length === 0) { el.innerHTML = ''; return; }
+
+  const { paid, net, selfTotal } = calcBalances(trip);
+
+  let html = `
+    <div class="s-divider" style="margin-top:20px"></div>
+    <div class="s-head"><div class="s-title">สรุปทริป — ใครจ่ายอะไรบ้าง</div></div>
+    <div class="trip-summary-wrap">`;
+
+  trip.members.forEach((m, i) => {
+    const p = pal(i);
+    const totalPaid  = paid[m] || 0;
+    const selfAmt    = selfTotal[m] || 0;
+    const sharedPaid = totalPaid - selfAmt;          // จ่ายแทนคนอื่น (รอเก็บ)
+    const netVal     = net[m] || 0;
+    const waitCollect = netVal > 0.5 ? netVal : 0;   // รอเก็บจากเพื่อน
+    const needPay     = netVal < -0.5 ? Math.abs(netVal) : 0; // ยังต้องจ่ายเพื่อน
+
+    // รายการที่คนนี้จ่ายไปก่อน
+    const myExpenses = trip.expenses.filter(e => e.paidBy === m && e.splitMode !== 'self');
+
+    if (totalPaid === 0 && selfAmt === 0) return; // skip ถ้าไม่มีรายการ
+
+    html += `
+      <div class="tsummary-card">
+        <div class="tsummary-header">
+          <div class="net-av" style="background:${p.bg};color:${p.fg};width:38px;height:38px;font-size:12px">${initials(m)}</div>
+          <div style="flex:1">
+            <div class="tsummary-name">${m}</div>
+            <div class="tsummary-sub">จ่ายรวม ฿${fmt(totalPaid)}${selfAmt > 0 ? ` (จ่ายเอง ฿${fmt(selfAmt)})` : ''}</div>
+          </div>
+          ${waitCollect > 0 ? `<div class="tsummary-badge badge-collect">รอเก็บ ฿${fmt(waitCollect)}</div>` : ''}
+          ${needPay > 0 ? `<div class="tsummary-badge badge-owe">ยังค้าง ฿${fmt(needPay)}</div>` : ''}
+          ${waitCollect === 0 && needPay === 0 ? `<div class="tsummary-badge badge-ok">เท่ากัน ✓</div>` : ''}
         </div>
-        <div class="settle-info">
-          <div class="settle-names">${s.from}<span class="arr"> → </span>${s.to}</div>
-          <div class="settle-note">${done ? '✓ โอนแล้ว' : 'รอการโอนเงิน'}</div>
-        </div>
-        <div class="settle-right">
-          <div class="settle-amt">฿${fmt(s.amount)}</div>
-          ${done
-            ? `<div class="tag-done">โอนแล้ว</div>`
-            : `<button class="btn-settle" onclick="markSettled(${idx})">โอนแล้ว ✓</button>`}
-        </div>
+        ${myExpenses.length > 0 ? `
+        <div class="tsummary-items">
+          ${myExpenses.map(e => {
+            const share = e.participants && e.participants.length > 0 ? e.amount / e.participants.length : e.amount;
+            return `<div class="tsummary-row">
+              <span class="tsummary-cat">${e.cat.split(' ')[0]}</span>
+              <span class="tsummary-iname">${e.name}</span>
+              <span class="tsummary-iamt">฿${fmt(e.amount)}</span>
+            </div>`;
+          }).join('')}
+        </div>` : ''}
       </div>`;
-  }).join('');
+  });
+
+  html += `</div>`;
+  el.innerHTML = html;
 }
 
 function renderBalanceDot(trip) {
@@ -434,11 +502,12 @@ function openEditExpense() {
   document.getElementById('fi-name').value   = exp.name;
   document.getElementById('fi-amount').value = exp.amount;
   selectedCat          = exp.cat;
-  selectedParticipants = [...exp.participants];
-  splitMode            = 'equal';
+  selectedParticipants = [...(exp.participants || [])];
+  splitMode            = exp.splitMode || 'equal';
 
   document.querySelectorAll('.split-tab').forEach(t => t.classList.remove('active'));
-  document.getElementById('st-equal').classList.add('active');
+  const activeTab = splitMode === 'self' ? 'st-self' : splitMode === 'custom' ? 'st-custom' : 'st-equal';
+  document.getElementById(activeTab).classList.add('active');
 
   // restore image
   if (exp.image) {
@@ -465,6 +534,8 @@ function submitExpense() {
   if (!valid) return;
 
   const trip = currentTrip();
+  const participants = splitMode === 'self' ? [] : [...selectedParticipants];
+
   if (editingExpenseId !== null) {
     // UPDATE
     const idx = trip.expenses.findIndex(e => e.id === editingExpenseId);
@@ -472,7 +543,8 @@ function submitExpense() {
       trip.expenses[idx] = {
         ...trip.expenses[idx],
         name, amount, cat: selectedCat,
-        paidBy, participants: [...selectedParticipants],
+        paidBy, participants,
+        splitMode,
         image: currentImageData,
       };
     }
@@ -481,7 +553,8 @@ function submitExpense() {
     // CREATE
     trip.expenses.push({
       id: Date.now(), name, amount, cat: selectedCat,
-      paidBy, participants: [...selectedParticipants],
+      paidBy, participants,
+      splitMode,
       settled: [], date: now(),
       image: currentImageData,
     });
@@ -508,9 +581,13 @@ function openExpenseDetail(id) {
   document.getElementById('det-amount').textContent      = fmt(exp.amount);
   document.getElementById('det-cat').textContent         = exp.cat;
   document.getElementById('det-paidby').textContent      = exp.paidBy;
-  const perP = exp.participants.length > 0 ? exp.amount / exp.participants.length : exp.amount;
-  document.getElementById('det-participants').textContent =
-    exp.participants.join(', ') + ` (฿${fmt(perP)}/คน)`;
+  const perP = exp.participants && exp.participants.length > 0 ? exp.amount / exp.participants.length : exp.amount;
+  if (exp.splitMode === 'self') {
+    document.getElementById('det-participants').textContent = 'จ่ายเอง (ไม่หารกับใคร)';
+  } else {
+    document.getElementById('det-participants').textContent =
+      (exp.participants || []).join(', ') + ` (฿${fmt(perP)}/คน)`;
+  }
 
   const imgWrap = document.getElementById('det-img-wrap');
   if (exp.image) {
@@ -765,6 +842,7 @@ function selectCat(el) {
 
 function setSplitMode(mode) {
   splitMode = mode;
+  document.getElementById('st-self').classList.toggle('active', mode === 'self');
   document.getElementById('st-equal').classList.toggle('active', mode === 'equal');
   document.getElementById('st-custom').classList.toggle('active', mode === 'custom');
   renderParticipantList();
@@ -774,6 +852,15 @@ function renderParticipantList() {
   const trip   = currentTrip();
   const list   = document.getElementById('p-list-wrap');
   const amount = parseFloat(document.getElementById('fi-amount').value) || 0;
+
+  if (splitMode === 'self') {
+    list.innerHTML = `<div class="self-paid-note">
+      <span>💰</span>
+      <span>รายการนี้ถือว่า <strong>จ่ายเองทั้งหมด</strong> — ไม่หารกับใครในกลุ่ม</span>
+    </div>`;
+    return;
+  }
+
   const perP   = selectedParticipants.length > 0 ? Math.round(amount / selectedParticipants.length) : 0;
   list.innerHTML = trip.members.map((m, i) => {
     const p   = pal(i);

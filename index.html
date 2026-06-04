@@ -79,6 +79,7 @@
     <div class="s-divider" style="margin-top:20px"></div>
     <div class="s-head"><div class="s-title">รายการที่ต้องโอน</div></div>
     <div class="settle-wrap" id="settle-wrap"></div>
+    <div id="trip-summary-section"></div>
   </div>
 
   <!-- PAGE: STATS -->
@@ -149,8 +150,9 @@
 
     <div class="fg">
       <label class="fl">แบ่งให้ใครบ้าง</label>
-      <div class="split-tabs">
-        <div class="split-tab active" id="st-equal" onclick="setSplitMode('equal')">เฉลี่ยเท่ากัน</div>
+      <div class="split-tabs" style="grid-template-columns:1fr 1fr 1fr">
+        <div class="split-tab" id="st-self" onclick="setSplitMode('self')">จ่ายเอง</div>
+        <div class="split-tab active" id="st-equal" onclick="setSplitMode('equal')">เฉลี่ยกับ</div>
         <div class="split-tab" id="st-custom" onclick="setSplitMode('custom')">เลือกเอง</div>
       </div>
       <div class="p-list" id="p-list-wrap"></div>
