@@ -37,33 +37,36 @@ let viewingExpenseId   = null;
 let editingTripId      = null;
 let editingMemberName  = null;
 let _saveTimer         = null;
-let _isSaving          = false;   // flag: กำลัง write ไป Firestore อยู่
+let _lastSaveAt        = 0;   // timestamp ล่าสุดที่เรา save ลง Firestore
 
 // ── PERSIST (Firebase) ──
 function saveState() {
   clearTimeout(_saveTimer);
   _saveTimer = setTimeout(async () => {
+    _saveTimer = null;
     try {
       if (window._setDoc && window._DOC) {
-        _isSaving = true;
-        await window._setDoc(window._DOC, { state: JSON.stringify(state) });
-        // รอสักครู่ก่อน clear flag เผื่อ onSnapshot ยิงกลับมาทันที
-        setTimeout(() => { _isSaving = false; }, 1000);
+        const savedAt = Date.now();
+        _lastSaveAt = savedAt;
+        // เก็บ timestamp ไว้ใน document ด้วย เพื่อเปรียบเทียบตอนรับกลับ
+        await window._setDoc(window._DOC, {
+          state: JSON.stringify(state),
+          savedAt,
+        });
       }
     } catch(e) {
       console.error('saveState error', e);
-      _isSaving = false;
     }
-    _saveTimer = null;
   }, 600);
 }
 
 // callback ที่ Firebase listener จะเรียกเมื่อมีข้อมูลใหม่จาก cloud
-window._onRemoteState = function(remote) {
-  // ถ้าเราเพิ่งเป็นคนส่งข้อมูลไปเอง ไม่ต้องรับกลับ (กัน loop)
-  if (_isSaving) return;
+window._onRemoteState = function(remote, remoteSavedAt) {
+  // ถ้า remote เก่ากว่า (หรือเท่ากับ) สิ่งที่เรา save ไปล่าสุด → ignore
+  // ยกเว้นตอน init (_lastSaveAt === 0) ให้รับข้อมูลจาก cloud เสมอ
+  if (_lastSaveAt > 0 && remoteSavedAt <= _lastSaveAt) return;
   state = remote;
-  renderOnly(); // render โดยไม่ trigger saveState
+  renderOnly();
   if (!_initDone) {
     _initDone = true;
     showLoadingOverlay(false);

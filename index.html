@@ -391,14 +391,16 @@
   // Real-time listener — เมื่อ Firestore อัปเดต ให้ re-render
   onSnapshot(DOC, snap => {
     if (snap.exists()) {
-      const remote = snap.data().state;
+      const data = snap.data();
+      const remote = data.state;
+      const remoteSavedAt = data.savedAt || 0;
       if (remote) {
         window._state = JSON.parse(remote);
-        if (window._onRemoteState) window._onRemoteState(window._state);
+        if (window._onRemoteState) window._onRemoteState(window._state, remoteSavedAt);
       }
     } else {
       // ยังไม่มีข้อมูลบน cloud — สร้างเปล่าไว้
-      setDoc(DOC, { state: JSON.stringify({ currentTrip: null, trips: [] }) });
+      setDoc(DOC, { state: JSON.stringify({ currentTrip: null, trips: [] }), savedAt: 0 });
     }
   });
 </script>
