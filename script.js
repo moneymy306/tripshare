@@ -37,27 +37,33 @@ let viewingExpenseId   = null;
 let editingTripId      = null;
 let editingMemberName  = null;
 let _saveTimer         = null;
+let _isSaving          = false;   // flag: กำลัง write ไป Firestore อยู่
 
 // ── PERSIST (Firebase) ──
 function saveState() {
-  // debounce — รอ 600ms หลังการเปลี่ยนแปลงสุดท้ายแล้วค่อย save
   clearTimeout(_saveTimer);
   _saveTimer = setTimeout(async () => {
     try {
       if (window._setDoc && window._DOC) {
+        _isSaving = true;
         await window._setDoc(window._DOC, { state: JSON.stringify(state) });
+        // รอสักครู่ก่อน clear flag เผื่อ onSnapshot ยิงกลับมาทันที
+        setTimeout(() => { _isSaving = false; }, 1000);
       }
-    } catch(e) { console.error('saveState error', e); }
+    } catch(e) {
+      console.error('saveState error', e);
+      _isSaving = false;
+    }
+    _saveTimer = null;
   }, 600);
 }
 
 // callback ที่ Firebase listener จะเรียกเมื่อมีข้อมูลใหม่จาก cloud
 window._onRemoteState = function(remote) {
-  // ถ้ากำลัง save อยู่ (debounce ยังไม่หมด) ไม่รับข้อมูลเก่ากลับมา
-  if (_saveTimer) return;
+  // ถ้าเราเพิ่งเป็นคนส่งข้อมูลไปเอง ไม่ต้องรับกลับ (กัน loop)
+  if (_isSaving) return;
   state = remote;
-  render();
-  // ถ้ายังไม่เคยโหลดครั้งแรก ให้ถามเปิด trip modal
+  renderOnly(); // render โดยไม่ trigger saveState
   if (!_initDone) {
     _initDone = true;
     showLoadingOverlay(false);
@@ -100,8 +106,14 @@ function toast(msg, type = '') {
 }
 
 // ── RENDER ──
+// render() = เรียกเมื่อ user กระทำ (save + render)
 function render() {
   saveState();
+  renderOnly();
+}
+
+// renderOnly() = เรียกเมื่อรับข้อมูลจาก Firestore (render เฉยๆ ไม่ save)
+function renderOnly() {
   const trip = currentTrip();
   renderTopbar(trip);
   renderHome(trip);
@@ -137,7 +149,6 @@ function renderHome(trip) {
   const dateRange = formatTripDateRange(trip.startDate, trip.endDate);
   const pillEl = document.getElementById('trip-pill-label');
   pillEl.textContent = trip.emoji + ' ' + trip.name;
-  // แสดงวันที่ใต้ pill ถ้ามี
   let dateEl = document.getElementById('trip-date-range');
   if (!dateEl) {
     dateEl = document.createElement('div');
@@ -219,7 +230,6 @@ function calcBalances(trip) {
   trip.expenses.forEach(exp => {
     paid[exp.paidBy] = (paid[exp.paidBy] || 0) + exp.amount;
     if (exp.splitMode === 'self') {
-      // จ่ายเอง: ผู้จ่ายรับภาระทั้งหมด ไม่แบ่งกับใคร
       owed[exp.paidBy] = (owed[exp.paidBy] || 0) + exp.amount;
       selfTotal[exp.paidBy] = (selfTotal[exp.paidBy] || 0) + exp.amount;
     } else {
@@ -341,15 +351,13 @@ function renderTripSummary(trip) {
     const p = pal(i);
     const totalPaid  = paid[m] || 0;
     const selfAmt    = selfTotal[m] || 0;
-    const sharedPaid = totalPaid - selfAmt;          // จ่ายแทนคนอื่น (รอเก็บ)
     const netVal     = net[m] || 0;
-    const waitCollect = netVal > 0.5 ? netVal : 0;   // รอเก็บจากเพื่อน
-    const needPay     = netVal < -0.5 ? Math.abs(netVal) : 0; // ยังต้องจ่ายเพื่อน
+    const waitCollect = netVal > 0.5 ? netVal : 0;
+    const needPay     = netVal < -0.5 ? Math.abs(netVal) : 0;
 
-    // รายการที่คนนี้จ่ายไปก่อน
     const myExpenses = trip.expenses.filter(e => e.paidBy === m && e.splitMode !== 'self');
 
-    if (totalPaid === 0 && selfAmt === 0) return; // skip ถ้าไม่มีรายการ
+    if (totalPaid === 0 && selfAmt === 0) return;
 
     html += `
       <div class="tsummary-card">
@@ -366,7 +374,6 @@ function renderTripSummary(trip) {
         ${myExpenses.length > 0 ? `
         <div class="tsummary-items">
           ${myExpenses.map(e => {
-            const share = e.participants && e.participants.length > 0 ? e.amount / e.participants.length : e.amount;
             return `<div class="tsummary-row">
               <span class="tsummary-cat">${e.cat.split(' ')[0]}</span>
               <span class="tsummary-iname">${e.name}</span>
@@ -550,7 +557,6 @@ function openEditExpense() {
   const activeTab = splitMode === 'self' ? 'st-self' : splitMode === 'custom' ? 'st-custom' : 'st-equal';
   document.getElementById(activeTab).classList.add('active');
 
-  // restore image
   if (exp.image) {
     currentImageData = exp.image;
     showImagePreview(exp.image);
@@ -578,7 +584,6 @@ function submitExpense() {
   const participants = splitMode === 'self' ? [] : [...selectedParticipants];
 
   if (editingExpenseId !== null) {
-    // UPDATE
     const idx = trip.expenses.findIndex(e => e.id === editingExpenseId);
     if (idx !== -1) {
       trip.expenses[idx] = {
@@ -591,7 +596,6 @@ function submitExpense() {
     }
     toast('แก้ไขรายการแล้ว ✓');
   } else {
-    // CREATE
     trip.expenses.push({
       id: Date.now(), name, amount, cat: selectedCat,
       paidBy, participants,
@@ -683,14 +687,12 @@ function submitMember() {
   if (!trip) { toast('กรุณาสร้างทริปก่อนนะ'); return; }
 
   if (editingMemberName !== null) {
-    // RENAME
     if (trip.members.includes(name) && name !== editingMemberName) {
       toast('ชื่อนี้มีอยู่แล้ว', 'error'); return;
     }
     const idx = trip.members.indexOf(editingMemberName);
     if (idx !== -1) {
       trip.members[idx] = name;
-      // rename in expenses
       trip.expenses.forEach(exp => {
         if (exp.paidBy === editingMemberName) exp.paidBy = name;
         exp.participants = exp.participants.map(p => p === editingMemberName ? name : p);
@@ -698,7 +700,6 @@ function submitMember() {
     }
     toast(`เปลี่ยนชื่อเป็น "${name}" แล้ว ✓`);
   } else {
-    // ADD
     if (trip.members.includes(name)) { toast('ชื่อนี้มีอยู่แล้ว', 'error'); return; }
     trip.members.push(name);
     toast(`เพิ่ม ${name} แล้ว ✓`);
@@ -970,9 +971,8 @@ function showLoadingOverlay(show) {
   el.style.display = show ? 'flex' : 'none';
 }
 
-// แสดง loading จนกว่า Firebase จะส่งข้อมูลมา (timeout 8s กัน stuck)
 showLoadingOverlay(true);
-render(); // render ตัวเปล่าก่อน ไม่ให้หน้าว่างค้าง
+renderOnly(); // render ตัวเปล่าก่อน ไม่ให้หน้าว่างค้าง (ไม่ save)
 setTimeout(() => {
   if (!_initDone) {
     _initDone = true;
