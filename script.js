@@ -300,25 +300,119 @@ function calcBalances(trip) {
   return { paid, owed, net, selfTotal, received: settledReceived };
 }
 
-function calcSettlements(net) {
-  const debtors = [], creditors = [];
-  Object.entries(net).forEach(([m, v]) => {
-    if (v < -0.5) debtors.push({ m, v: Math.abs(v) });
-    else if (v > 0.5) creditors.push({ m, v });
-  });
-  debtors.sort((a,b) => b.v - a.v);
-  creditors.sort((a,b) => b.v - a.v);
-  const txns = [];
-  const d = debtors.map(x => ({...x}));
-  const c = creditors.map(x => ({...x}));
-  let i = 0, j = 0;
-  while (i < d.length && j < c.length) {
-    const amt = Math.min(d[i].v, c[j].v);
-    if (amt > 0.5) txns.push({ from: d[i].m, to: c[j].m, amount: Math.round(amt) });
-    d[i].v -= amt; c[j].v -= amt;
-    if (d[i].v < 0.5) i++;
-    if (c[j].v < 0.5) j++;
+// คำนวณ settlement จาก direct debt ระหว่างคู่ (debtor → creditor)
+// โดยรวมหนี้สุทธิระหว่างแต่ละคู่ก่อน เพื่อให้แสดงทิศทางที่ถูกต้อง
+function calcSettlements(net, trip) {
+  if (!trip) {
+    // fallback: greedy net-based (ใช้เมื่อไม่มี trip)
+    const debtors = [], creditors = [];
+    Object.entries(net).forEach(([m, v]) => {
+      if (v < -0.5) debtors.push({ m, v: Math.abs(v) });
+      else if (v > 0.5) creditors.push({ m, v });
+    });
+    debtors.sort((a,b) => b.v - a.v);
+    creditors.sort((a,b) => b.v - a.v);
+    const txns = [];
+    const d = debtors.map(x => ({...x}));
+    const c = creditors.map(x => ({...x}));
+    let i = 0, j = 0;
+    while (i < d.length && j < c.length) {
+      const amt = Math.min(d[i].v, c[j].v);
+      if (amt > 0.5) txns.push({ from: d[i].m, to: c[j].m, amount: Math.round(amt) });
+      d[i].v -= amt; c[j].v -= amt;
+      if (d[i].v < 0.5) i++;
+      if (c[j].v < 0.5) j++;
+    }
+    return txns;
   }
+
+  // ── คำนวณหนี้สุทธิแบบ pair-wise (debtor → creditor) ──
+  // pairDebt[debtor][creditor] = ยอดที่ debtor ค้าง creditor โดยตรง
+  const pairDebt = {};
+
+  trip.expenses.forEach(exp => {
+    if (exp.splitMode === 'self') return;
+    const parts = exp.participants && exp.participants.length > 0 ? exp.participants : [exp.paidBy];
+    const payer = exp.paidBy;
+
+    parts.forEach(p => {
+      if (p === payer) return; // ผู้จ่ายไม่ค้างตัวเอง
+      let share;
+      if (exp.splitMode === 'custom' && exp.customSplit) {
+        share = exp.customSplit[p] || 0;
+      } else {
+        share = exp.amount / parts.length;
+      }
+      if (share < 0.5) return;
+
+      // p ค้าง payer เป็นจำนวน share
+      if (!pairDebt[p]) pairDebt[p] = {};
+      pairDebt[p][payer] = (pairDebt[p][payer] || 0) + share;
+    });
+  });
+
+  // ── หักลบหนี้สวนทาง (net ระหว่างแต่ละคู่) ──
+  // ถ้า A ค้าง B และ B ค้าง A ให้หักกลบก่อน
+  const members = trip.members;
+  for (let i = 0; i < members.length; i++) {
+    for (let j = i + 1; j < members.length; j++) {
+      const a = members[i], b = members[j];
+      const ab = (pairDebt[a] && pairDebt[a][b]) || 0;
+      const ba = (pairDebt[b] && pairDebt[b][a]) || 0;
+      if (ab > 0 && ba > 0) {
+        if (ab >= ba) {
+          if (!pairDebt[a]) pairDebt[a] = {};
+          pairDebt[a][b] = ab - ba;
+          pairDebt[b][a] = 0;
+        } else {
+          if (!pairDebt[b]) pairDebt[b] = {};
+          pairDebt[b][a] = ba - ab;
+          pairDebt[a][b] = 0;
+        }
+      }
+    }
+  }
+
+  // ── หัก settled shares ──
+  const expSettled = trip.expSettled || [];
+  trip.expenses.forEach(exp => {
+    if (exp.splitMode === 'self') return;
+    const parts = exp.participants && exp.participants.length > 0 ? exp.participants : [exp.paidBy];
+    const payer = exp.paidBy;
+    parts.forEach(p => {
+      if (p === payer) return;
+      const shareKey = `${exp.id}|${p}`;
+      if (!expSettled.includes(shareKey)) return;
+      let share;
+      if (exp.splitMode === 'custom' && exp.customSplit) {
+        share = exp.customSplit[p] || 0;
+      } else {
+        share = exp.amount / parts.length;
+      }
+      if (share < 0.5) return;
+      if (pairDebt[p] && pairDebt[p][payer]) {
+        pairDebt[p][payer] = Math.max(0, pairDebt[p][payer] - share);
+      }
+    });
+  });
+
+  // ── หัก settled (โอนแล้ว) จาก trip.settled ──
+  const tripSettled = trip.settled || [];
+  // trip.settled มี format "debtor|creditor" (ทำเครื่องหมาย settle ทั้งก้อนแล้ว)
+  // แต่เราคำนวณจาก pair แล้ว ไม่ต้องหักซ้ำ (pair-based คำนวณจาก expenses โดยตรง)
+
+  // ── สร้าง txns จาก pair debt ──
+  const txns = [];
+  Object.entries(pairDebt).forEach(([debtor, credMap]) => {
+    Object.entries(credMap).forEach(([creditor, amt]) => {
+      if (amt > 0.5) {
+        txns.push({ from: debtor, to: creditor, amount: Math.round(amt) });
+      }
+    });
+  });
+
+  // เรียงตามยอด มากไปน้อย
+  txns.sort((a, b) => b.amount - a.amount);
   return txns;
 }
 
@@ -364,7 +458,7 @@ function renderBalance(trip) {
   }).join('');
 
   // ── settle cards ──
-  const settlements = calcSettlements(net);
+  const settlements = calcSettlements(net, trip);
   const settled = trip.settled || [];
   if (settlements.length === 0) {
     settleWrap.innerHTML = emptyState('🎉','ไม่มียอดค้างชำระ','ทุกคนเท่ากันหมดแล้ว!');
