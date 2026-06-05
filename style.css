@@ -606,3 +606,15 @@ body::before {
   text-decoration-color: var(--red);
   color: var(--t4) !important;
 }
+
+/* ── settle group (จัดตาม expense) ── */
+.settle-group { display: flex; flex-direction: column; gap: 6px; }
+.settle-group-header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 4px 2px;
+  font-size: 12px; font-weight: 600;
+  color: var(--t2);
+  letter-spacing: .03em;
+}
+.settle-group-emoji { font-size: 15px; }
+.settle-group-name  { flex: 1; }

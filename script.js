@@ -78,6 +78,12 @@ window._onRemoteState = function(remote, remoteSavedAt) {
 function pal(idx) { return PALETTES[idx % PALETTES.length]; }
 function initials(name) { return (name || '?').substring(0, 2).toUpperCase(); }
 function fmt(n) { return Math.round(n).toLocaleString('th-TH'); }
+function fmtDec(n) {
+  // แสดงทศนิยม 2 ตำแหน่งถ้ามีเศษ ไม่งั้นแสดงจำนวนเต็ม
+  const rounded = Math.round(n * 100) / 100;
+  if (Number.isInteger(rounded)) return rounded.toLocaleString('th-TH');
+  return rounded.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
 function now() {
   const d = new Date();
   return `${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()+543}`;
@@ -300,120 +306,82 @@ function calcBalances(trip) {
   return { paid, owed, net, selfTotal, received: settledReceived };
 }
 
-// คำนวณ settlement จาก direct debt ระหว่างคู่ (debtor → creditor)
-// โดยรวมหนี้สุทธิระหว่างแต่ละคู่ก่อน เพื่อให้แสดงทิศทางที่ถูกต้อง
+// calcSettlements: คืน groups จัดตาม expense แต่ละรายการ
+// แต่ละ group = { expId, expName, expCat, lines: [{from, to, amount, shareKey, done}] }
+// txns = flat pair-wise netted list สำหรับสรุปยอดในการ์ด
 function calcSettlements(net, trip) {
-  if (!trip) {
-    // fallback: greedy net-based (ใช้เมื่อไม่มี trip)
-    const debtors = [], creditors = [];
-    Object.entries(net).forEach(([m, v]) => {
-      if (v < -0.5) debtors.push({ m, v: Math.abs(v) });
-      else if (v > 0.5) creditors.push({ m, v });
-    });
-    debtors.sort((a,b) => b.v - a.v);
-    creditors.sort((a,b) => b.v - a.v);
-    const txns = [];
-    const d = debtors.map(x => ({...x}));
-    const c = creditors.map(x => ({...x}));
-    let i = 0, j = 0;
-    while (i < d.length && j < c.length) {
-      const amt = Math.min(d[i].v, c[j].v);
-      if (amt > 0.5) txns.push({ from: d[i].m, to: c[j].m, amount: Math.round(amt) });
-      d[i].v -= amt; c[j].v -= amt;
-      if (d[i].v < 0.5) i++;
-      if (c[j].v < 0.5) j++;
-    }
-    return txns;
-  }
+  if (!trip) return { groups: [], txns: [] };
 
-  // ── คำนวณหนี้สุทธิแบบ pair-wise (debtor → creditor) ──
-  // pairDebt[debtor][creditor] = ยอดที่ debtor ค้าง creditor โดยตรง
-  const pairDebt = {};
+  const expSettled = trip.expSettled || [];
+  const settled    = trip.settled    || [];
+
+  const groups = [];
+  // pairRaw[debtor][creditor] = ยอดรวมที่ยังค้าง (ยังไม่ settled)
+  const pairRaw = {};
 
   trip.expenses.forEach(exp => {
     if (exp.splitMode === 'self') return;
-    const parts = exp.participants && exp.participants.length > 0 ? exp.participants : [exp.paidBy];
+    const parts = exp.participants && exp.participants.length > 0
+      ? exp.participants : [exp.paidBy];
     const payer = exp.paidBy;
+    const lines = [];
 
     parts.forEach(p => {
-      if (p === payer) return; // ผู้จ่ายไม่ค้างตัวเอง
+      if (p === payer) return;
       let share;
       if (exp.splitMode === 'custom' && exp.customSplit) {
         share = exp.customSplit[p] || 0;
       } else {
         share = exp.amount / parts.length;
       }
-      if (share < 0.5) return;
+      if (share < 0.01) return;
 
-      // p ค้าง payer เป็นจำนวน share
-      if (!pairDebt[p]) pairDebt[p] = {};
-      pairDebt[p][payer] = (pairDebt[p][payer] || 0) + share;
+      const shareKey  = `${exp.id}|${p}`;
+      const shareDone = expSettled.includes(shareKey);
+      const done = shareDone;
+
+      lines.push({ from: p, to: payer, amount: share, shareKey, done });
+
+      // สะสม pair debt สำหรับ txns (เฉพาะที่ยังไม่จ่าย)
+      if (!done) {
+        if (!pairRaw[p]) pairRaw[p] = {};
+        pairRaw[p][payer] = (pairRaw[p][payer] || 0) + share;
+      }
     });
+
+    if (lines.length > 0) {
+      groups.push({ expId: exp.id, expName: exp.name, expCat: exp.cat, lines });
+    }
   });
 
-  // ── หักลบหนี้สวนทาง (net ระหว่างแต่ละคู่) ──
-  // ถ้า A ค้าง B และ B ค้าง A ให้หักกลบก่อน
+  // ── net pair-wise (หักลบหนี้สวนทาง) สำหรับ txns ──
   const members = trip.members;
   for (let i = 0; i < members.length; i++) {
     for (let j = i + 1; j < members.length; j++) {
       const a = members[i], b = members[j];
-      const ab = (pairDebt[a] && pairDebt[a][b]) || 0;
-      const ba = (pairDebt[b] && pairDebt[b][a]) || 0;
+      const ab = (pairRaw[a] && pairRaw[a][b]) || 0;
+      const ba = (pairRaw[b] && pairRaw[b][a]) || 0;
       if (ab > 0 && ba > 0) {
         if (ab >= ba) {
-          if (!pairDebt[a]) pairDebt[a] = {};
-          pairDebt[a][b] = ab - ba;
-          pairDebt[b][a] = 0;
+          pairRaw[a][b] = ab - ba;
+          if (pairRaw[b]) pairRaw[b][a] = 0;
         } else {
-          if (!pairDebt[b]) pairDebt[b] = {};
-          pairDebt[b][a] = ba - ab;
-          pairDebt[a][b] = 0;
+          pairRaw[b][a] = ba - ab;
+          if (pairRaw[a]) pairRaw[a][b] = 0;
         }
       }
     }
   }
 
-  // ── หัก settled shares ──
-  const expSettled = trip.expSettled || [];
-  trip.expenses.forEach(exp => {
-    if (exp.splitMode === 'self') return;
-    const parts = exp.participants && exp.participants.length > 0 ? exp.participants : [exp.paidBy];
-    const payer = exp.paidBy;
-    parts.forEach(p => {
-      if (p === payer) return;
-      const shareKey = `${exp.id}|${p}`;
-      if (!expSettled.includes(shareKey)) return;
-      let share;
-      if (exp.splitMode === 'custom' && exp.customSplit) {
-        share = exp.customSplit[p] || 0;
-      } else {
-        share = exp.amount / parts.length;
-      }
-      if (share < 0.5) return;
-      if (pairDebt[p] && pairDebt[p][payer]) {
-        pairDebt[p][payer] = Math.max(0, pairDebt[p][payer] - share);
-      }
-    });
-  });
-
-  // ── หัก settled (โอนแล้ว) จาก trip.settled ──
-  const tripSettled = trip.settled || [];
-  // trip.settled มี format "debtor|creditor" (ทำเครื่องหมาย settle ทั้งก้อนแล้ว)
-  // แต่เราคำนวณจาก pair แล้ว ไม่ต้องหักซ้ำ (pair-based คำนวณจาก expenses โดยตรง)
-
-  // ── สร้าง txns จาก pair debt ──
+  // สร้าง flat txns
   const txns = [];
-  Object.entries(pairDebt).forEach(([debtor, credMap]) => {
+  Object.entries(pairRaw).forEach(([debtor, credMap]) => {
     Object.entries(credMap).forEach(([creditor, amt]) => {
-      if (amt > 0.5) {
-        txns.push({ from: debtor, to: creditor, amount: Math.round(amt) });
-      }
+      if (amt > 0.01) txns.push({ from: debtor, to: creditor, amount: amt });
     });
   });
 
-  // เรียงตามยอด มากไปน้อย
-  txns.sort((a, b) => b.amount - a.amount);
-  return txns;
+  return { groups, txns };
 }
 
 function renderBalance(trip) {
@@ -426,40 +394,32 @@ function renderBalance(trip) {
     return;
   }
   const { paid, net } = calcBalances(trip);
+  const { groups, txns } = calcSettlements(net, trip);
 
-  // คำนวณ settlements ก่อน เพื่อให้การ์ดสอดคล้องกับรายการโอน
-  const settlements = calcSettlements(net, trip);
-  const settled = trip.settled || [];
-
-  // สรุปยอดที่แต่ละคนต้องโอน (pendingOut) และรอรับ (pendingIn) จาก settlements ที่ยังค้างอยู่
+  // สรุปยอด pendingOut / pendingIn ต่อคน จาก flat txns (เฉพาะที่ยังไม่จ่าย)
   const pendingOut = {}, pendingIn = {};
   trip.members.forEach(m => { pendingOut[m] = 0; pendingIn[m] = 0; });
-  settlements.forEach(s => {
-    const done = settled.includes(`${s.from}|${s.to}`);
-    if (!done) {
-      pendingOut[s.from] = (pendingOut[s.from] || 0) + s.amount;
-      pendingIn[s.to]    = (pendingIn[s.to]    || 0) + s.amount;
-    }
+  txns.forEach(t => {
+    pendingOut[t.from] = (pendingOut[t.from] || 0) + t.amount;
+    pendingIn[t.to]    = (pendingIn[t.to]    || 0) + t.amount;
   });
 
-  // net-card: ใช้ยอดจาก settlements (สอดคล้องกับรายการโอนด้านล่าง)
+  // ── net-card (สอดคล้องกับรายการโอนด้านล่าง) ──
   netGrid.innerHTML = trip.members.map((m, i) => {
     const p   = pal(i);
     const out = pendingOut[m] || 0;
     const inc = pendingIn[m]  || 0;
-
     let cls, netLabel;
-    if (out > 0.5) {
+    if (out > 0.01) {
       cls = 'is-neg';
-      netLabel = `<span class="fin-net-val clr-neg">-฿${fmt(out)}</span><span class="fin-net-tag tag-neg">ต้องจ่าย</span>`;
-    } else if (inc > 0.5) {
+      netLabel = `<span class="fin-net-val clr-neg">-฿${fmtDec(out)}</span><span class="fin-net-tag tag-neg">ต้องจ่าย</span>`;
+    } else if (inc > 0.01) {
       cls = 'is-pos';
-      netLabel = `<span class="fin-net-val clr-pos">+฿${fmt(inc)}</span><span class="fin-net-tag tag-pos">รับคืน</span>`;
+      netLabel = `<span class="fin-net-val clr-pos">+฿${fmtDec(inc)}</span><span class="fin-net-tag tag-pos">รับคืน</span>`;
     } else {
       cls = '';
       netLabel = `<span class="fin-net-val clr-zero">฿0</span><span class="fin-net-tag tag-zero">เท่ากัน</span>`;
     }
-
     return `
       <div class="net-card ${cls}" onclick="openNetCardDetail('${m.replace(/'/g,"\'")}')">
         <div class="net-top">
@@ -471,43 +431,55 @@ function renderBalance(trip) {
           <span class="fin-val">฿${fmt(paid[m] || 0)}</span>
         </div>
         <div class="fin-row">
-          <span class="fin-lbl">${out > 0.5 ? 'ต้องโอน' : inc > 0.5 ? 'รอรับ' : 'ยอดคงเหลือ'}</span>
-          <span class="fin-val ${out > 0.5 ? 'clr-neg' : 'clr-pos'}">฿${fmt(out > 0.5 ? out : inc)}</span>
+          <span class="fin-lbl">${out > 0.01 ? 'ต้องโอน' : inc > 0.01 ? 'รอรับ' : 'ยอดคงเหลือ'}</span>
+          <span class="fin-val ${out > 0.01 ? 'clr-neg' : 'clr-pos'}">฿${fmtDec(out > 0.01 ? out : inc)}</span>
         </div>
         <div class="fin-divider"></div>
         <div class="fin-net-row">${netLabel}</div>
       </div>`;
   }).join('');
 
-  // settle cards
-  if (settlements.length === 0) {
+  // ── settle section: จัดกลุ่มตาม expense ──
+  const hasAny = groups.some(g => g.lines.length > 0);
+  if (!hasAny) {
     settleWrap.innerHTML = emptyState('🎉','ไม่มียอดค้างชำระ','ทุกคนเท่ากันหมดแล้ว!');
   } else {
-    settleWrap.innerHTML = settlements.map((s) => {
-      const key = `${s.from}|${s.to}`;
-      const fi = trip.members.indexOf(s.from);
-      const ti = trip.members.indexOf(s.to);
-      const fp = pal(fi >= 0 ? fi : 0);
-      const tp = pal(ti >= 0 ? ti : 0);
-      const done = settled.includes(key);
-      return `
-        <div class="settle-card ${done ? 'done' : ''}">
-          <div class="settle-avatars">
-            <div class="settle-av" style="background:${fp.bg};color:${fp.fg}">${initials(s.from)}</div>
-            <div class="settle-av" style="background:${tp.bg};color:${tp.fg}">${initials(s.to)}</div>
-          </div>
-          <div class="settle-info">
-            <div class="settle-names">${s.from}<span class="arr"> → </span>${s.to}</div>
-            <div class="settle-note">${done ? '✓ โอนแล้ว' : 'รอโอน'}</div>
-          </div>
-          <div class="settle-right">
-            <div class="settle-amt">฿${fmt(s.amount)}</div>
-            ${done
-              ? `<button class="btn-settle btn-settle-undo" onclick="unmarkSettled('${key}')">รอโอน</button>`
-              : `<button class="btn-settle" onclick="markSettled('${key}')">โอนแล้ว ✓</button>`}
-          </div>
+    let html = '';
+    groups.forEach(g => {
+      const catEmoji = g.expCat ? g.expCat.split(' ')[0] : '📦';
+      html += `<div class="settle-group">
+        <div class="settle-group-header">
+          <span class="settle-group-emoji">${catEmoji}</span>
+          <span class="settle-group-name">${g.expName}</span>
         </div>`;
-    }).join('');
+      g.lines.forEach(line => {
+        const fi = trip.members.indexOf(line.from);
+        const ti = trip.members.indexOf(line.to);
+        const fp = pal(fi >= 0 ? fi : 0);
+        const tp = pal(ti >= 0 ? ti : 0);
+        const fromSafe = line.from.replace(/'/g, "\'");
+        const toSafe   = line.to.replace(/'/g, "\'");
+        html += `
+          <div class="settle-card ${line.done ? 'done' : ''}">
+            <div class="settle-avatars">
+              <div class="settle-av" style="background:${fp.bg};color:${fp.fg}">${initials(line.from)}</div>
+              <div class="settle-av" style="background:${tp.bg};color:${tp.fg}">${initials(line.to)}</div>
+            </div>
+            <div class="settle-info">
+              <div class="settle-names">${line.from}<span class="arr"> → </span>${line.to}</div>
+              <div class="settle-note">${line.done ? '✓ โอนแล้ว' : 'รอโอน'}</div>
+            </div>
+            <div class="settle-right">
+              <div class="settle-amt">฿${fmtDec(line.amount)}</div>
+              ${line.done
+                ? `<button class="btn-settle btn-settle-undo" onclick="toggleExpenseShare(${g.expId},'${fromSafe}')">รอโอน</button>`
+                : `<button class="btn-settle" onclick="toggleExpenseShare(${g.expId},'${fromSafe}')">โอนแล้ว ✓</button>`}
+            </div>
+          </div>`;
+      });
+      html += `</div>`;
+    });
+    settleWrap.innerHTML = html;
   }
 
   renderTripSummary(trip);
