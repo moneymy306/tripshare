@@ -425,19 +425,41 @@ function renderBalance(trip) {
     renderTripSummary(trip);
     return;
   }
-  const { paid, owed, net, received } = calcBalances(trip);
+  const { paid, net } = calcBalances(trip);
 
-  // ── net-card: แสดง จ่าย / รับ / คงเหลือ ──
+  // คำนวณ settlements ก่อน เพื่อให้การ์ดสอดคล้องกับรายการโอน
+  const settlements = calcSettlements(net, trip);
+  const settled = trip.settled || [];
+
+  // สรุปยอดที่แต่ละคนต้องโอน (pendingOut) และรอรับ (pendingIn) จาก settlements ที่ยังค้างอยู่
+  const pendingOut = {}, pendingIn = {};
+  trip.members.forEach(m => { pendingOut[m] = 0; pendingIn[m] = 0; });
+  settlements.forEach(s => {
+    const done = settled.includes(`${s.from}|${s.to}`);
+    if (!done) {
+      pendingOut[s.from] = (pendingOut[s.from] || 0) + s.amount;
+      pendingIn[s.to]    = (pendingIn[s.to]    || 0) + s.amount;
+    }
+  });
+
+  // net-card: ใช้ยอดจาก settlements (สอดคล้องกับรายการโอนด้านล่าง)
   netGrid.innerHTML = trip.members.map((m, i) => {
     const p   = pal(i);
-    const n   = net[m] || 0;
-    const rec = received[m] || 0;  // เงินที่รับกลับจาก debtor มาแล้ว
-    const cls = n > 0.5 ? 'is-pos' : n < -0.5 ? 'is-neg' : '';
-    const netLabel = n > 0.5
-      ? `<span class="fin-net-val clr-pos">+฿${fmt(n)}</span><span class="fin-net-tag tag-pos">รับคืน</span>`
-      : n < -0.5
-      ? `<span class="fin-net-val clr-neg">-฿${fmt(Math.abs(n))}</span><span class="fin-net-tag tag-neg">ต้องจ่าย</span>`
-      : `<span class="fin-net-val clr-zero">฿0</span><span class="fin-net-tag tag-zero">เท่ากัน</span>`;
+    const out = pendingOut[m] || 0;
+    const inc = pendingIn[m]  || 0;
+
+    let cls, netLabel;
+    if (out > 0.5) {
+      cls = 'is-neg';
+      netLabel = `<span class="fin-net-val clr-neg">-฿${fmt(out)}</span><span class="fin-net-tag tag-neg">ต้องจ่าย</span>`;
+    } else if (inc > 0.5) {
+      cls = 'is-pos';
+      netLabel = `<span class="fin-net-val clr-pos">+฿${fmt(inc)}</span><span class="fin-net-tag tag-pos">รับคืน</span>`;
+    } else {
+      cls = '';
+      netLabel = `<span class="fin-net-val clr-zero">฿0</span><span class="fin-net-tag tag-zero">เท่ากัน</span>`;
+    }
+
     return `
       <div class="net-card ${cls}" onclick="openNetCardDetail('${m.replace(/'/g,"\'")}')">
         <div class="net-top">
@@ -445,21 +467,19 @@ function renderBalance(trip) {
           <div class="net-name">${m}</div>
         </div>
         <div class="fin-row">
-          <span class="fin-lbl">จ่าย</span>
+          <span class="fin-lbl">จ่ายไป</span>
           <span class="fin-val">฿${fmt(paid[m] || 0)}</span>
         </div>
         <div class="fin-row">
-          <span class="fin-lbl">รับแล้ว</span>
-          <span class="fin-val clr-pos">฿${fmt(rec)}</span>
+          <span class="fin-lbl">${out > 0.5 ? 'ต้องโอน' : inc > 0.5 ? 'รอรับ' : 'ยอดคงเหลือ'}</span>
+          <span class="fin-val ${out > 0.5 ? 'clr-neg' : 'clr-pos'}">฿${fmt(out > 0.5 ? out : inc)}</span>
         </div>
         <div class="fin-divider"></div>
         <div class="fin-net-row">${netLabel}</div>
       </div>`;
   }).join('');
 
-  // ── settle cards ──
-  const settlements = calcSettlements(net, trip);
-  const settled = trip.settled || [];
+  // settle cards
   if (settlements.length === 0) {
     settleWrap.innerHTML = emptyState('🎉','ไม่มียอดค้างชำระ','ทุกคนเท่ากันหมดแล้ว!');
   } else {
