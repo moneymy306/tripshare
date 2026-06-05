@@ -554,3 +554,55 @@ body::before {
   background: var(--s4) !important;
   color: var(--t2) !important;
 }
+
+/* ── PER-EXPENSE SHARE TOGGLE ── */
+.tsummary-row-payable {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-right: 4px;
+  transition: opacity .2s;
+}
+.tsummary-row-payable .tsummary-row-body {
+  flex: 1;
+  min-width: 0;
+}
+.share-toggle-btn {
+  flex-shrink: 0;
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  border: 1.5px solid;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  transition: all .18s;
+  background: transparent;
+}
+.share-toggle-unpaid {
+  border-color: var(--red);
+  color: var(--red);
+}
+.share-toggle-unpaid:hover {
+  background: var(--red-lo);
+}
+.share-toggle-done {
+  border-color: var(--green);
+  color: var(--green);
+  background: var(--green-lo);
+}
+.share-toggle-done:hover {
+  opacity: .7;
+}
+.share-paid {
+  opacity: .6;
+}
+.share-paid .tsummary-iname,
+.share-paid .tsummary-paidby {
+  text-decoration: line-through;
+  text-decoration-color: var(--t4);
+}
+.amt-paid {
+  text-decoration: line-through;
+  text-decoration-color: var(--red);
+  color: var(--t4) !important;
+}

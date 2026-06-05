@@ -229,6 +229,7 @@ function emptyState(icon, title, sub) {
 // ── BALANCE ──
 function calcBalances(trip) {
   const paid = {}, owed = {}, selfTotal = {};
+  const expSettled = trip.expSettled || [];
   trip.members.forEach(m => { paid[m] = 0; owed[m] = 0; selfTotal[m] = 0; });
   trip.expenses.forEach(exp => {
     paid[exp.paidBy] = (paid[exp.paidBy] || 0) + exp.amount;
@@ -236,7 +237,6 @@ function calcBalances(trip) {
       owed[exp.paidBy] = (owed[exp.paidBy] || 0) + exp.amount;
       selfTotal[exp.paidBy] = (selfTotal[exp.paidBy] || 0) + exp.amount;
     } else if (exp.splitMode === 'custom' && exp.customSplit) {
-      // each person owes their specified amount
       const parts = exp.participants && exp.participants.length > 0 ? exp.participants : [exp.paidBy];
       parts.forEach(p => {
         const share = exp.customSplit[p] || 0;
@@ -247,6 +247,32 @@ function calcBalances(trip) {
       const share = exp.amount / parts.length;
       parts.forEach(p => { owed[p] = (owed[p] || 0) + share; });
     }
+  });
+  // Adjust for per-expense-share settlements: when debtor marks share as paid,
+  // their owed balance decreases (debt cleared) and payer receives the cash.
+  trip.expenses.forEach(exp => {
+    if (exp.splitMode === 'self') return;
+    const parts = exp.participants && exp.participants.length > 0 ? exp.participants : [exp.paidBy];
+    parts.forEach(p => {
+      if (p === exp.paidBy) return;
+      const shareKey = `${exp.id}|${p}`;
+      if (!expSettled.includes(shareKey)) return;
+      let share;
+      if (exp.splitMode === 'custom' && exp.customSplit) {
+        share = exp.customSplit[p] || 0;
+      } else {
+        share = exp.amount / parts.length;
+      }
+      // Debtor paid back: reduce their owed, add to payer's received (paid)
+      owed[p] = (owed[p] || 0) - share;
+      // payer received the cash → increase their "paid" (acts as income received)
+      paid[exp.paidBy] = (paid[exp.paidBy] || 0) + share;
+      // Also reduce payer's owed by same amount (net stays correct):
+      // Actually: net[payer] = paid[payer] - owed[payer]
+      // When debtor pays, payer's net should NOT change (the debt just transfers to cash received)
+      // So we add to paid[payer] AND add to owed[payer] equally → net unchanged for payer ✓
+      owed[exp.paidBy] = (owed[exp.paidBy] || 0) + share;
+    });
   });
   const net = {};
   trip.members.forEach(m => { net[m] = (paid[m] || 0) - (owed[m] || 0); });
@@ -446,16 +472,28 @@ function renderTripSummary(trip) {
 
     // Section: expenses M owes to others
     if (owedExpenses.length > 0) {
+      const expSettled = trip.expSettled || [];
       html += `<div class="tsummary-items tsummary-items-owe">
         <div class="tsummary-section-lbl tsummary-lbl-owe">💸 ${m} ค้างจ่าย</div>`;
       owedExpenses.forEach(e => {
         const share = getShare(e, m);
-        html += `<div class="tsummary-row">
+        const shareKey = `${e.id}|${m}`;
+        const isPaid = expSettled.includes(shareKey);
+        const mSafe = m.replace(/'/g, "\\'");
+        html += `<div class="tsummary-row tsummary-row-payable ${isPaid ? 'share-paid' : ''}">
           <span class="tsummary-cat">${e.cat.split(' ')[0]}</span>
           <div class="tsummary-row-body">
             <span class="tsummary-iname">${e.name} <span class="tsummary-paidby">(${e.paidBy} จ่าย)</span></span>
-            <span class="tsummary-iamt tsummary-iamt-owe">-฿${fmt(share)}</span>
+            <span class="tsummary-iamt tsummary-iamt-owe ${isPaid ? 'amt-paid' : ''}">-฿${fmt(share)}</span>
           </div>
+          <button class="share-toggle-btn ${isPaid ? 'share-toggle-done' : 'share-toggle-unpaid'}"
+            onclick="toggleExpenseShare(${e.id}, '${mSafe}')"
+            title="${isPaid ? 'จ่ายแล้ว (คลิกเพื่อยกเลิก)' : 'ยังไม่จ่าย (คลิกเพื่อบันทึกการจ่าย)'}">
+            ${isPaid
+              ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8"><polyline points="20 6 9 17 4 12"/></svg>`
+              : `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`
+            }
+          </button>
         </div>`;
       });
       html += `</div>`;
@@ -972,6 +1010,22 @@ function unmarkSettled(key) {
   trip.settled = trip.settled.filter(k => k !== key);
   render();
   toast('เปลี่ยนเป็นรอโอนแล้ว');
+}
+
+// ── PER-EXPENSE-SHARE SETTLED ──
+// key format: "expId|debtor"  (debtor already paid payer for this expense share)
+function toggleExpenseShare(expId, debtor) {
+  const trip = currentTrip();
+  if (!trip.expSettled) trip.expSettled = [];
+  const key = `${expId}|${debtor}`;
+  if (trip.expSettled.includes(key)) {
+    trip.expSettled = trip.expSettled.filter(k => k !== key);
+    toast('ยกเลิกการจ่ายแล้ว');
+  } else {
+    trip.expSettled.push(key);
+    toast('บันทึกการจ่ายแล้ว ✓');
+  }
+  render();
 }
 
 // ── FORM BUILDERS ──
