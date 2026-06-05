@@ -228,19 +228,31 @@ function emptyState(icon, title, sub) {
 
 // ── BALANCE ──
 function calcBalances(trip) {
-  const paid = {}, owed = {}, selfTotal = {};
+  // expPaid = เงินจ่ายออกจาก expenses จริงๆ (ไม่เปลี่ยน)
+  // owed    = ส่วนแบ่งที่แต่ละคนต้องรับผิดชอบ (ไม่เปลี่ยน)
+  // settled = ยอดที่ debtor โอนคืน payer แล้ว (จาก expSettled toggle)
+  // net     = (expPaid + settled_received) - (owed + settled_sent)
+  //         = expPaid - owed + (settled_received - settled_sent)
+  // ถ้าทุกคนจ่ายครบทุก share: net ทุกคน = 0
+  const expPaid = {}, owed = {}, selfTotal = {};
+  const settledSent = {}, settledReceived = {}; // เงินโอนออก / เงินรับกลับ จาก settlement
   const expSettled = trip.expSettled || [];
-  trip.members.forEach(m => { paid[m] = 0; owed[m] = 0; selfTotal[m] = 0; });
+
+  trip.members.forEach(m => {
+    expPaid[m] = 0; owed[m] = 0; selfTotal[m] = 0;
+    settledSent[m] = 0; settledReceived[m] = 0;
+  });
+
+  // ── คำนวณ expPaid และ owed ──
   trip.expenses.forEach(exp => {
-    paid[exp.paidBy] = (paid[exp.paidBy] || 0) + exp.amount;
+    expPaid[exp.paidBy] = (expPaid[exp.paidBy] || 0) + exp.amount;
     if (exp.splitMode === 'self') {
       owed[exp.paidBy] = (owed[exp.paidBy] || 0) + exp.amount;
       selfTotal[exp.paidBy] = (selfTotal[exp.paidBy] || 0) + exp.amount;
     } else if (exp.splitMode === 'custom' && exp.customSplit) {
       const parts = exp.participants && exp.participants.length > 0 ? exp.participants : [exp.paidBy];
       parts.forEach(p => {
-        const share = exp.customSplit[p] || 0;
-        owed[p] = (owed[p] || 0) + share;
+        owed[p] = (owed[p] || 0) + (exp.customSplit[p] || 0);
       });
     } else {
       const parts = exp.participants && exp.participants.length > 0 ? exp.participants : [exp.paidBy];
@@ -248,8 +260,11 @@ function calcBalances(trip) {
       parts.forEach(p => { owed[p] = (owed[p] || 0) + share; });
     }
   });
-  // Adjust for per-expense-share settlements: when debtor marks share as paid,
-  // their owed balance decreases (debt cleared) and payer receives the cash.
+
+  // ── คำนวณ settlement transfers ──
+  // เมื่อ debtor mark "จ่ายแล้ว" หมายความว่า debtor โอนเงิน share ให้ payer แล้ว:
+  //   settledSent[debtor]        += share  (debtor จ่ายออก)
+  //   settledReceived[payer]     += share  (payer รับเข้า)
   trip.expenses.forEach(exp => {
     if (exp.splitMode === 'self') return;
     const parts = exp.participants && exp.participants.length > 0 ? exp.participants : [exp.paidBy];
@@ -257,26 +272,32 @@ function calcBalances(trip) {
       if (p === exp.paidBy) return;
       const shareKey = `${exp.id}|${p}`;
       if (!expSettled.includes(shareKey)) return;
-      let share;
-      if (exp.splitMode === 'custom' && exp.customSplit) {
-        share = exp.customSplit[p] || 0;
-      } else {
-        share = exp.amount / parts.length;
-      }
-      // Debtor paid back: reduce their owed, add to payer's received (paid)
-      owed[p] = (owed[p] || 0) - share;
-      // payer received the cash → increase their "paid" (acts as income received)
-      paid[exp.paidBy] = (paid[exp.paidBy] || 0) + share;
-      // Also reduce payer's owed by same amount (net stays correct):
-      // Actually: net[payer] = paid[payer] - owed[payer]
-      // When debtor pays, payer's net should NOT change (the debt just transfers to cash received)
-      // So we add to paid[payer] AND add to owed[payer] equally → net unchanged for payer ✓
-      owed[exp.paidBy] = (owed[exp.paidBy] || 0) + share;
+      const share = (exp.splitMode === 'custom' && exp.customSplit)
+        ? (exp.customSplit[p] || 0)
+        : exp.amount / parts.length;
+      settledSent[p]              = (settledSent[p]              || 0) + share;
+      settledReceived[exp.paidBy] = (settledReceived[exp.paidBy] || 0) + share;
     });
   });
+
+  // ── net สุทธิ ──
+  // net = (เงินออกทั้งหมด: expPaid + settledSent) - (เงินที่ต้องรับผิดชอบ: owed + settledReceived)
+  // ทำไม? เพราะ owed คือ "ส่วนแบ่งที่ต้องจ่าย" และ settledSent คือ "จ่ายออกไปแล้ว (โอนคืน)"
+  //        expPaid คือ "จ่ายแทน" และ settledReceived คือ "ได้รับคืนมาแล้ว"
+  // net > 0: ยังมีคนอื่นค้างกับเรา (รอรับ) | net < 0: เรายังค้างกับคนอื่น | net = 0: เท่ากัน
   const net = {};
-  trip.members.forEach(m => { net[m] = (paid[m] || 0) - (owed[m] || 0); });
-  return { paid, owed, net, selfTotal };
+  trip.members.forEach(m => {
+    const totalOut = (expPaid[m] || 0) + (settledSent[m] || 0);
+    const totalIn  = (owed[m]    || 0) + (settledReceived[m] || 0);
+    net[m] = totalOut - totalIn;
+  });
+
+  // paid ที่แสดงในการ์ด = expPaid (เงินที่จ่ายออกใน expenses)
+  // received ที่แสดง = settledReceived (เงินที่รับคืนมาแล้ว)
+  const paid = {};
+  trip.members.forEach(m => { paid[m] = expPaid[m] || 0; });
+
+  return { paid, owed, net, selfTotal, received: settledReceived };
 }
 
 function calcSettlements(net) {
@@ -310,12 +331,13 @@ function renderBalance(trip) {
     renderTripSummary(trip);
     return;
   }
-  const { paid, owed, net } = calcBalances(trip);
+  const { paid, owed, net, received } = calcBalances(trip);
 
   // ── net-card: แสดง จ่าย / รับ / คงเหลือ ──
   netGrid.innerHTML = trip.members.map((m, i) => {
     const p   = pal(i);
     const n   = net[m] || 0;
+    const rec = received[m] || 0;  // เงินที่รับกลับจาก debtor มาแล้ว
     const cls = n > 0.5 ? 'is-pos' : n < -0.5 ? 'is-neg' : '';
     const netLabel = n > 0.5
       ? `<span class="fin-net-val clr-pos">+฿${fmt(n)}</span><span class="fin-net-tag tag-pos">รับคืน</span>`
@@ -323,7 +345,7 @@ function renderBalance(trip) {
       ? `<span class="fin-net-val clr-neg">-฿${fmt(Math.abs(n))}</span><span class="fin-net-tag tag-neg">ต้องจ่าย</span>`
       : `<span class="fin-net-val clr-zero">฿0</span><span class="fin-net-tag tag-zero">เท่ากัน</span>`;
     return `
-      <div class="net-card ${cls}">
+      <div class="net-card ${cls}" onclick="openNetCardDetail('${m.replace(/'/g,"\'")}')">
         <div class="net-top">
           <div class="net-av" style="background:${p.bg};color:${p.fg}">${initials(m)}</div>
           <div class="net-name">${m}</div>
@@ -333,8 +355,8 @@ function renderBalance(trip) {
           <span class="fin-val">฿${fmt(paid[m] || 0)}</span>
         </div>
         <div class="fin-row">
-          <span class="fin-lbl">รับ</span>
-          <span class="fin-val clr-pos">฿${fmt(Math.max(0, n))}</span>
+          <span class="fin-lbl">รับแล้ว</span>
+          <span class="fin-val clr-pos">฿${fmt(rec)}</span>
         </div>
         <div class="fin-divider"></div>
         <div class="fin-net-row">${netLabel}</div>
