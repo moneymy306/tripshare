@@ -235,6 +235,13 @@ function calcBalances(trip) {
     if (exp.splitMode === 'self') {
       owed[exp.paidBy] = (owed[exp.paidBy] || 0) + exp.amount;
       selfTotal[exp.paidBy] = (selfTotal[exp.paidBy] || 0) + exp.amount;
+    } else if (exp.splitMode === 'custom' && exp.customSplit) {
+      // each person owes their specified amount
+      const parts = exp.participants && exp.participants.length > 0 ? exp.participants : [exp.paidBy];
+      parts.forEach(p => {
+        const share = exp.customSplit[p] || 0;
+        owed[p] = (owed[p] || 0) + share;
+      });
     } else {
       const parts = exp.participants && exp.participants.length > 0 ? exp.participants : [exp.paidBy];
       const share = exp.amount / parts.length;
@@ -309,12 +316,13 @@ function renderBalance(trip) {
   if (settlements.length === 0) {
     settleWrap.innerHTML = emptyState('🎉','ไม่มียอดค้างชำระ','ทุกคนเท่ากันหมดแล้ว!');
   } else {
-    settleWrap.innerHTML = settlements.map((s, idx) => {
+    settleWrap.innerHTML = settlements.map((s) => {
+      const key = `${s.from}|${s.to}`;
       const fi = trip.members.indexOf(s.from);
       const ti = trip.members.indexOf(s.to);
       const fp = pal(fi >= 0 ? fi : 0);
       const tp = pal(ti >= 0 ? ti : 0);
-      const done = settled.includes(idx);
+      const done = settled.includes(key);
       return `
         <div class="settle-card ${done ? 'done' : ''}">
           <div class="settle-avatars">
@@ -323,13 +331,13 @@ function renderBalance(trip) {
           </div>
           <div class="settle-info">
             <div class="settle-names">${s.from}<span class="arr"> → </span>${s.to}</div>
-            <div class="settle-note">${done ? '✓ โอนแล้ว' : 'รอการโอนเงิน'}</div>
+            <div class="settle-note">${done ? '✓ โอนแล้ว' : 'รอโอน'}</div>
           </div>
           <div class="settle-right">
             <div class="settle-amt">฿${fmt(s.amount)}</div>
             ${done
-              ? `<div class="tag-done">โอนแล้ว</div>`
-              : `<button class="btn-settle" onclick="markSettled(${idx})">โอนแล้ว ✓</button>`}
+              ? `<button class="btn-settle btn-settle-undo" onclick="unmarkSettled('${key}')">รอโอน</button>`
+              : `<button class="btn-settle" onclick="markSettled('${key}')">โอนแล้ว ✓</button>`}
           </div>
         </div>`;
     }).join('');
@@ -525,6 +533,7 @@ function openAddExpense() {
   selectedParticipants = [...trip.members];
   splitMode  = 'equal';
   selectedCat = '🍜 อาหาร';
+  customAmounts = {};
   resetImageUI();
 
   document.querySelectorAll('.split-tab').forEach(t => t.classList.remove('active'));
@@ -555,6 +564,7 @@ function openEditExpense() {
   selectedCat          = exp.cat;
   selectedParticipants = [...(exp.participants || [])];
   splitMode            = exp.splitMode || 'equal';
+  customAmounts        = exp.customSplit ? { ...exp.customSplit } : {};
 
   document.querySelectorAll('.split-tab').forEach(t => t.classList.remove('active'));
   const activeTab = splitMode === 'self' ? 'st-self' : splitMode === 'custom' ? 'st-custom' : 'st-equal';
@@ -585,6 +595,17 @@ function submitExpense() {
 
   const trip = currentTrip();
   const participants = splitMode === 'self' ? [] : [...selectedParticipants];
+  // for custom mode, save per-person amounts
+  const customSplit = splitMode === 'custom' ? { ...customAmounts } : null;
+
+  // validate custom: total must match amount
+  if (splitMode === 'custom') {
+    const total = participants.reduce((s, m) => s + (customAmounts[m] || 0), 0);
+    if (Math.abs(total - amount) >= 1) {
+      toast(`ยอดรวมไม่ตรง (ขาดอีก ฿${fmt(amount - total)})`, 'error');
+      return;
+    }
+  }
 
   if (editingExpenseId !== null) {
     const idx = trip.expenses.findIndex(e => e.id === editingExpenseId);
@@ -594,6 +615,7 @@ function submitExpense() {
         name, amount, cat: selectedCat,
         paidBy, participants,
         splitMode,
+        customSplit,
         image: currentImageData,
       };
     }
@@ -603,6 +625,7 @@ function submitExpense() {
       id: Date.now(), name, amount, cat: selectedCat,
       paidBy, participants,
       splitMode,
+      customSplit,
       settled: [], date: now(),
       image: currentImageData,
     });
@@ -632,6 +655,9 @@ function openExpenseDetail(id) {
   const perP = exp.participants && exp.participants.length > 0 ? exp.amount / exp.participants.length : exp.amount;
   if (exp.splitMode === 'self') {
     document.getElementById('det-participants').textContent = 'จ่ายเอง (ไม่หารกับใคร)';
+  } else if (exp.splitMode === 'custom' && exp.customSplit) {
+    const parts = (exp.participants || []).map(p => `${p} ฿${fmt(exp.customSplit[p] || 0)}`);
+    document.getElementById('det-participants').textContent = parts.join(', ');
   } else {
     document.getElementById('det-participants').textContent =
       (exp.participants || []).join(', ') + ` (฿${fmt(perP)}/คน)`;
@@ -863,12 +889,20 @@ function openConfirm(title, msg, onOk) {
 }
 
 // ── MARK SETTLED ──
-function markSettled(idx) {
+function markSettled(key) {
   const trip = currentTrip();
   if (!trip.settled) trip.settled = [];
-  if (!trip.settled.includes(idx)) trip.settled.push(idx);
+  if (!trip.settled.includes(key)) trip.settled.push(key);
   render();
   toast('บันทึกการโอนแล้ว ✓');
+}
+
+function unmarkSettled(key) {
+  const trip = currentTrip();
+  if (!trip.settled) return;
+  trip.settled = trip.settled.filter(k => k !== key);
+  render();
+  toast('เปลี่ยนเป็นรอโอนแล้ว');
 }
 
 // ── FORM BUILDERS ──
@@ -902,6 +936,13 @@ function setSplitMode(mode) {
   document.getElementById('st-self').classList.toggle('active', mode === 'self');
   document.getElementById('st-equal').classList.toggle('active', mode === 'equal');
   document.getElementById('st-custom').classList.toggle('active', mode === 'custom');
+  if (mode === 'custom') {
+    // pre-fill equal amounts as starting point
+    const amount = parseFloat(document.getElementById('fi-amount').value) || 0;
+    const perP = selectedParticipants.length > 0 ? Math.round(amount / selectedParticipants.length) : 0;
+    customAmounts = {};
+    selectedParticipants.forEach(m => { customAmounts[m] = perP; });
+  }
   renderParticipantList();
 }
 
@@ -918,6 +959,48 @@ function renderParticipantList() {
     return;
   }
 
+  if (splitMode === 'custom') {
+    // custom mode: show all members, toggle select + editable amount
+    const totalAssigned = selectedParticipants.reduce((s, m) => s + (customAmounts[m] || 0), 0);
+    const remaining     = Math.round((amount - totalAssigned) * 100) / 100;
+    const rows = trip.members.map((m, i) => {
+      const p   = pal(i);
+      const sel = selectedParticipants.includes(m);
+      const val = sel ? (customAmounts[m] !== undefined ? customAmounts[m] : '') : '';
+      return `
+        <div class="p-row ${sel ? 'sel' : ''}" style="align-items:center">
+          <div class="p-av" style="background:${p.bg};color:${p.fg};cursor:pointer" onclick="toggleP('${m.replace(/'/g,"\\'")}')">
+            ${initials(m)}
+          </div>
+          <div class="p-name-txt" style="cursor:pointer;flex:1" onclick="toggleP('${m.replace(/'/g,"\\'")}')">
+            ${m}
+          </div>
+          ${sel
+            ? `<div class="custom-amt-wrap">
+                <span class="fi-cur" style="font-size:13px;padding:0 4px 0 0">฿</span>
+                <input class="custom-amt-input" type="number" min="0" step="1"
+                  value="${val}"
+                  placeholder="0"
+                  onclick="event.stopPropagation()"
+                  oninput="setCustomAmt('${m.replace(/'/g,"\\'")}', this.value)">
+              </div>`
+            : `<div class="p-check"></div>`
+          }
+        </div>`;
+    }).join('');
+    const remClass = Math.abs(remaining) < 1 ? 'custom-remain-ok' : remaining < 0 ? 'custom-remain-over' : 'custom-remain-left';
+    const remText  = Math.abs(remaining) < 1
+      ? '✓ ยอดครบแล้ว'
+      : remaining > 0 ? `ยังเหลือ ฿${fmt(remaining)}` : `เกินไป ฿${fmt(Math.abs(remaining))}`;
+    list.innerHTML = rows + `
+      <div class="custom-remain-bar ${remClass}">
+        <span>${remText}</span>
+        <span>รวมที่กำหนด ฿${fmt(totalAssigned)} / ฿${fmt(amount)}</span>
+      </div>`;
+    return;
+  }
+
+  // equal mode
   const perP   = selectedParticipants.length > 0 ? Math.round(amount / selectedParticipants.length) : 0;
   list.innerHTML = trip.members.map((m, i) => {
     const p   = pal(i);
@@ -932,10 +1015,34 @@ function renderParticipantList() {
   }).join('');
 }
 
+// custom amount per person
+let customAmounts = {};
+
+function setCustomAmt(member, val) {
+  customAmounts[member] = parseFloat(val) || 0;
+  // re-render just the summary bar without full re-render
+  const amount = parseFloat(document.getElementById('fi-amount').value) || 0;
+  const totalAssigned = selectedParticipants.reduce((s, m) => s + (customAmounts[m] || 0), 0);
+  const remaining = Math.round((amount - totalAssigned) * 100) / 100;
+  const bar = document.querySelector('.custom-remain-bar');
+  if (!bar) return;
+  const remClass = Math.abs(remaining) < 1 ? 'custom-remain-ok' : remaining < 0 ? 'custom-remain-over' : 'custom-remain-left';
+  const remText  = Math.abs(remaining) < 1
+    ? '✓ ยอดครบแล้ว'
+    : remaining > 0 ? `ยังเหลือ ฿${fmt(remaining)}` : `เกินไป ฿${fmt(Math.abs(remaining))}`;
+  bar.className = `custom-remain-bar ${remClass}`;
+  bar.innerHTML = `<span>${remText}</span><span>รวมที่กำหนด ฿${fmt(totalAssigned)} / ฿${fmt(amount)}</span>`;
+}
+
 function toggleP(member) {
   const idx = selectedParticipants.indexOf(member);
-  if (idx >= 0) { if (selectedParticipants.length > 1) selectedParticipants.splice(idx, 1); }
-  else selectedParticipants.push(member);
+  if (idx >= 0) {
+    if (splitMode !== 'custom' && selectedParticipants.length <= 1) return;
+    selectedParticipants.splice(idx, 1);
+    if (splitMode === 'custom') delete customAmounts[member];
+  } else {
+    selectedParticipants.push(member);
+  }
   renderParticipantList();
 }
 

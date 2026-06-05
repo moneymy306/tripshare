@@ -472,3 +472,43 @@ body::before {
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 .loading-text { font-size: 14px; color: var(--t3); }
+
+/* ── CUSTOM SPLIT ── */
+.custom-amt-wrap {
+  display: flex; align-items: center;
+  background: var(--s3); border: 1.5px solid var(--accent);
+  border-radius: var(--r-sm); padding: 4px 8px;
+  flex-shrink: 0;
+}
+.custom-amt-input {
+  background: transparent; border: none; outline: none;
+  color: var(--t1); font-size: 13px; font-weight: 600;
+  font-family: var(--font-body);
+  width: 64px; text-align: right;
+}
+.custom-amt-input::-webkit-inner-spin-button,
+.custom-amt-input::-webkit-outer-spin-button { -webkit-appearance: none; }
+
+.custom-remain-bar {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 9px 12px; border-radius: var(--r-md); margin-top: 6px;
+  font-size: 12px; font-weight: 500;
+  border: 1.5px solid var(--b1);
+  background: var(--s2);
+  transition: all .2s;
+}
+.custom-remain-ok   { border-color: var(--green); background: var(--green-lo); color: var(--green); }
+.custom-remain-over { border-color: var(--red);   background: var(--red-lo);   color: var(--red); }
+.custom-remain-left { border-color: var(--amber);  background: var(--amber-lo); color: var(--amber); }
+
+/* ── SETTLE BUTTON: UNDO ── */
+.btn-settle-undo {
+  background: var(--s3) !important;
+  border-color: var(--b2) !important;
+  color: var(--t3) !important;
+  font-size: 10px !important;
+}
+.btn-settle-undo:hover {
+  background: var(--s4) !important;
+  color: var(--t2) !important;
+}
