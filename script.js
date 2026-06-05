@@ -284,33 +284,38 @@ function renderBalance(trip) {
     renderTripSummary(trip);
     return;
   }
-  const { paid, net } = calcBalances(trip);
-  const maxAbs = Math.max(...Object.values(net).map(Math.abs), 1);
+  const { paid, owed, net } = calcBalances(trip);
 
+  // ── net-card: แสดง จ่าย / รับ / คงเหลือ ──
   netGrid.innerHTML = trip.members.map((m, i) => {
-    const p = pal(i);
-    const n = net[m] || 0;
+    const p   = pal(i);
+    const n   = net[m] || 0;
     const cls = n > 0.5 ? 'is-pos' : n < -0.5 ? 'is-neg' : '';
-    const clr = n > 0.5 ? 'clr-pos' : n < -0.5 ? 'clr-neg' : 'clr-zero';
-    const barColor = n > 0.5 ? 'var(--green)' : n < -0.5 ? 'var(--red)' : 'var(--t4)';
-    const barPct = Math.round(Math.abs(n) / maxAbs * 100);
-    const sign = n > 0.5 ? '+' : '';
+    const netLabel = n > 0.5
+      ? `<span class="fin-net-val clr-pos">+฿${fmt(n)}</span><span class="fin-net-tag tag-pos">รับคืน</span>`
+      : n < -0.5
+      ? `<span class="fin-net-val clr-neg">-฿${fmt(Math.abs(n))}</span><span class="fin-net-tag tag-neg">ต้องจ่าย</span>`
+      : `<span class="fin-net-val clr-zero">฿0</span><span class="fin-net-tag tag-zero">เท่ากัน</span>`;
     return `
       <div class="net-card ${cls}">
         <div class="net-top">
           <div class="net-av" style="background:${p.bg};color:${p.fg}">${initials(m)}</div>
-          <div>
-            <div class="net-name">${m}</div>
-            <div class="net-paid-lbl">จ่าย ฿${fmt(paid[m] || 0)}</div>
-          </div>
+          <div class="net-name">${m}</div>
         </div>
-        <div class="net-amt ${clr}">${sign}฿${fmt(Math.abs(n))}</div>
-        <div style="margin-top:8px">
-          <div class="net-bar"><div class="net-bar-fill" style="width:${barPct}%;background:${barColor}"></div></div>
+        <div class="fin-row">
+          <span class="fin-lbl">จ่าย</span>
+          <span class="fin-val">฿${fmt(paid[m] || 0)}</span>
         </div>
+        <div class="fin-row">
+          <span class="fin-lbl">รับ</span>
+          <span class="fin-val clr-pos">฿${fmt(Math.max(0, n))}</span>
+        </div>
+        <div class="fin-divider"></div>
+        <div class="fin-net-row">${netLabel}</div>
       </div>`;
   }).join('');
 
+  // ── settle cards ──
   const settlements = calcSettlements(net);
   const settled = trip.settled || [];
   if (settlements.length === 0) {
@@ -353,22 +358,41 @@ function renderTripSummary(trip) {
 
   const { paid, net, selfTotal } = calcBalances(trip);
 
+  // Build per-member per-expense breakdown:
+  // For each expense paid by M (not self), list who owes M how much
+  // Also list what M owes others
+  function getShare(exp, member) {
+    if (exp.splitMode === 'self') return 0;
+    if (exp.participants && !exp.participants.includes(member)) return 0;
+    if (exp.splitMode === 'custom' && exp.customSplit) return exp.customSplit[member] || 0;
+    const parts = exp.participants && exp.participants.length > 0 ? exp.participants : [exp.paidBy];
+    return exp.amount / parts.length;
+  }
+
   let html = `
     <div class="s-divider" style="margin-top:20px"></div>
     <div class="s-head"><div class="s-title">สรุปทริป — ใครจ่ายอะไรบ้าง</div></div>
     <div class="trip-summary-wrap">`;
 
   trip.members.forEach((m, i) => {
-    const p = pal(i);
-    const totalPaid  = paid[m] || 0;
-    const selfAmt    = selfTotal[m] || 0;
-    const netVal     = net[m] || 0;
+    const p        = pal(i);
+    const totalPaid = paid[m] || 0;
+    const selfAmt   = selfTotal[m] || 0;
+    const netVal    = net[m] || 0;
     const waitCollect = netVal > 0.5 ? netVal : 0;
     const needPay     = netVal < -0.5 ? Math.abs(netVal) : 0;
 
-    const myExpenses = trip.expenses.filter(e => e.paidBy === m && e.splitMode !== 'self');
+    // expenses that M paid for others (not self)
+    const paidExpenses = trip.expenses.filter(e => e.paidBy === m && e.splitMode !== 'self');
+    // expenses that M is a participant but didn't pay
+    const owedExpenses = trip.expenses.filter(e =>
+      e.paidBy !== m &&
+      e.splitMode !== 'self' &&
+      e.participants && e.participants.includes(m) &&
+      getShare(e, m) > 0.5
+    );
 
-    if (totalPaid === 0 && selfAmt === 0) return;
+    if (totalPaid === 0 && selfAmt === 0 && owedExpenses.length === 0) return;
 
     html += `
       <div class="tsummary-card">
@@ -378,21 +402,66 @@ function renderTripSummary(trip) {
             <div class="tsummary-name">${m}</div>
             <div class="tsummary-sub">จ่ายรวม ฿${fmt(totalPaid)}${selfAmt > 0 ? ` (จ่ายเอง ฿${fmt(selfAmt)})` : ''}</div>
           </div>
-          ${waitCollect > 0 ? `<div class="tsummary-badge badge-collect">รอเก็บ ฿${fmt(waitCollect)}</div>` : ''}
-          ${needPay > 0 ? `<div class="tsummary-badge badge-owe">ยังค้าง ฿${fmt(needPay)}</div>` : ''}
-          ${waitCollect === 0 && needPay === 0 ? `<div class="tsummary-badge badge-ok">เท่ากัน ✓</div>` : ''}
-        </div>
-        ${myExpenses.length > 0 ? `
-        <div class="tsummary-items">
-          ${myExpenses.map(e => {
-            return `<div class="tsummary-row">
-              <span class="tsummary-cat">${e.cat.split(' ')[0]}</span>
-              <span class="tsummary-iname">${e.name}</span>
-              <span class="tsummary-iamt">฿${fmt(e.amount)}</span>
-            </div>`;
-          }).join('')}
-        </div>` : ''}
-      </div>`;
+          ${waitCollect > 0.5 ? `<div class="tsummary-badge badge-collect">รอเก็บ ฿${fmt(waitCollect)}</div>` : ''}
+          ${needPay > 0.5   ? `<div class="tsummary-badge badge-owe">ต้องจ่าย ฿${fmt(needPay)}</div>` : ''}
+          ${waitCollect <= 0.5 && needPay <= 0.5 ? `<div class="tsummary-badge badge-ok">เท่ากัน ✓</div>` : ''}
+        </div>`;
+
+    // Section: expenses M paid → show who owes M per item
+    if (paidExpenses.length > 0) {
+      html += `<div class="tsummary-items">
+        <div class="tsummary-section-lbl">🧾 ${m} จ่ายให้</div>`;
+      paidExpenses.forEach(e => {
+        const parts = (e.participants || []).filter(p2 => p2 !== m);
+        // per-person share of others
+        const myShare = getShare(e, m);
+        const otherLines = parts.map(p2 => {
+          const s = getShare(e, p2);
+          return s > 0.5 ? `${p2} ฿${fmt(s)}` : null;
+        }).filter(Boolean);
+
+        html += `<div class="tsummary-row">
+          <span class="tsummary-cat">${e.cat.split(' ')[0]}</span>
+          <div class="tsummary-row-body">
+            <span class="tsummary-iname">${e.name}</span>
+            <span class="tsummary-iamt">฿${fmt(e.amount)}</span>
+          </div>
+        </div>`;
+
+        if (otherLines.length > 0) {
+          html += `<div class="tsummary-owe-detail">
+            <span class="tsummary-owe-icon">↳</span>
+            <span class="tsummary-owe-txt">คนอื่นค้างกับ ${m}: ${otherLines.join(', ')}</span>
+          </div>`;
+        }
+        if (myShare > 0.5) {
+          html += `<div class="tsummary-owe-detail tsummary-self-share">
+            <span class="tsummary-owe-icon">↳</span>
+            <span class="tsummary-owe-txt">${m} รับผิดชอบ ฿${fmt(myShare)}</span>
+          </div>`;
+        }
+      });
+      html += `</div>`;
+    }
+
+    // Section: expenses M owes to others
+    if (owedExpenses.length > 0) {
+      html += `<div class="tsummary-items tsummary-items-owe">
+        <div class="tsummary-section-lbl tsummary-lbl-owe">💸 ${m} ค้างจ่าย</div>`;
+      owedExpenses.forEach(e => {
+        const share = getShare(e, m);
+        html += `<div class="tsummary-row">
+          <span class="tsummary-cat">${e.cat.split(' ')[0]}</span>
+          <div class="tsummary-row-body">
+            <span class="tsummary-iname">${e.name} <span class="tsummary-paidby">(${e.paidBy} จ่าย)</span></span>
+            <span class="tsummary-iamt tsummary-iamt-owe">-฿${fmt(share)}</span>
+          </div>
+        </div>`;
+      });
+      html += `</div>`;
+    }
+
+    html += `</div>`;
   });
 
   html += `</div>`;
